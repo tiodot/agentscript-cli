@@ -1,0 +1,29 @@
+{
+  "name": "agentscript-cli",
+  "version": "0.1.0",
+  "description": "Convert AgentScript .agent files to AgentScope Python code",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "node scripts/setup-node-bridge.mjs"
+  },
+  "keywords": [
+    "agentscript",
+    "agentscope",
+    "agent",
+    "cli"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
