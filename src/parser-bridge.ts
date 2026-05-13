@@ -3,11 +3,10 @@
  *
  * The npm-published package has broken internal imports (issue #35),
  * so we use the locally built version from agentscript-src instead.
- * This module re-exports everything needed, keeping the path detail
- * isolated to a single file.
+ * We import from browser.js — a self-contained bundle that has no
+ * external @agentscript/* imports, eliminating cascading resolution
+ * issues in vitest/vite.
  */
-
-// The locally built agentforce package resolves its internal
-// @agentscript/* deps via the pnpm workspace in agentscript-src/
-export { parse } from '../agentscript-src/packages/agentforce/dist/index.js';
-export type { Document } from '../agentscript-src/packages/agentforce/dist/index.d.ts';
+// @ts-ignore — browser.js has no .d.ts but the parse function works correctly
+export { parse } from '@agentscript-src/packages/agentforce/dist/browser.js';
+export type { Document } from '@agentscript-src/packages/agentforce/dist/index.d.ts';
