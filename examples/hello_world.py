@@ -1,8 +1,19 @@
+import asyncio
+import functools
+import json
+import os
+
+from agentscope.agent import ReActAgent, UserAgent
+from agentscope.formatter import DashScopeChatFormatter
+from agentscope.memory import InMemoryMemory
+from agentscope.message import Msg, TextBlock
+from agentscope.model import DashScopeChatModel
+from agentscope.tool import ToolResponse, Toolkit
+from typing import Any, Callable, Optional
+
 """Auto-generated from HelloWorldBot by agentscript-cli.
 AgentScope implementation of HelloWorldBot.
 """
-
-from typing import Any
 
 class StateManager:
     """Shared state mirroring AgentScript variables."""
@@ -15,17 +26,6 @@ class StateManager:
 
     def get(self, name: str) -> Any:
         return getattr(self, name, None)
-
-
-
-
-import os
-
-from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.model import DashScopeChatModel
-from agentscope.tool import Toolkit
 
 def create_hello_world(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the hello_world agent."""
@@ -48,40 +48,82 @@ respond to whatever the user says! Make sure to speak in iambic pentameter"""
         toolkit=toolkit,
     )
 
+class HelloWorldBotBot:
+    """Auto-generated bot class. Supports package import and CLI execution.
 
-import asyncio
-import os
+    Usage::
 
-from agentscope.agent import ReActAgent, UserAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.message import Msg
-from agentscope.model import DashScopeChatModel
-from agentscope.pipeline import MsgHub
-from agentscope.tool import Toolkit
+        bot = HelloWorldBotBot(impls={
+            "verify_customer_identity": my_verify_fn,
+            ...
+        })
+        response = await bot.chat("Hello, I need help")
+    """
 
-async def main():
-    state = StateManager()
-    toolkit_hello_world = Toolkit()
+    def __init__(self, impls: dict[str, Callable] | None = None):
+        self.state = StateManager()
+        self._impls = impls or {}
+        self._current_agent_name = "hello_world"
+        self._agents: dict = {}
+        self._build_agents()
 
-    hello_world = create_hello_world(state, toolkit_hello_world)
+    async def _resolve_impl(self, name: str, **kwargs):
+        if name in self._impls:
+            return await self._impls[name](**kwargs)
+        raise NotImplementedError(
+            f"No implementation for '{name}'. Pass via impls={{'{name}': your_fn}}."
+        )
+
+    def _build_agents(self):
+        toolkit_hello_world = Toolkit()
+
+        hello_world_agent = create_hello_world(self.state, toolkit_hello_world)
+
+        import functools
+        def _make_tool(bot_self, name, fn):
+            @functools.wraps(fn)
+            async def _tool(*args, **kwargs):
+                result = await bot_self._resolve_impl(name, **kwargs)
+                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+            return _tool
 
 
 
-    user = UserAgent(name="user")
+        self._agents = {"hello_world": hello_world_agent}
 
-    print("Hello! I'm Greeting Bot. How are you feeling today?")
+    async def chat(self, user_message: str) -> str:
+        """Send a message and get a response. Maintains conversation state across calls."""
+        msg = Msg(name="user", content=user_message, role="user")
+        while True:
+            agent = self._agents[self._current_agent_name]
+            try:
+                result = await agent(msg)
+            except Exception as e:
+                return "Sorry, something went wrong."
+            if hasattr(agent, "next_agent") and agent.next_agent:
+                self._current_agent_name = agent.next_agent
+                agent.next_agent = None
+                msg = result
+                continue
+            return result.get_text_content() if hasattr(result, "get_text_content") else str(result)
 
-    msg = None
-    while True:
-        try:
-            msg = await hello_world(msg)
-        except Exception as e:
-            print("Sorry, something went wrong.")
-        msg = await user(msg)
-        if msg.get_text_content() == "exit":
-            break
+    def reset(self):
+        """Reset state and restart from the beginning (new session)."""
+        self.state = StateManager()
+        self._current_agent_name = "hello_world"
+        self._build_agents()
+
+    async def run_cli(self):
+        """Interactive CLI loop (replaces old main())."""
+        print("Hello! I'm Greeting Bot. How are you feeling today?")
+        while True:
+            user_input = input("You: ").strip()
+            if user_input.lower() in ("exit", "quit"):
+                break
+            response = await self.chat(user_input)
+            print(f"Bot: {response}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _impls = {}
+    asyncio.run(HelloWorldBotBot(impls=_impls).run_cli())

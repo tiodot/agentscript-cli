@@ -1,8 +1,19 @@
+import asyncio
+import functools
+import json
+import os
+
+from agentscope.agent import ReActAgent, UserAgent
+from agentscope.formatter import DashScopeChatFormatter
+from agentscope.memory import InMemoryMemory
+from agentscope.message import Msg, TextBlock
+from agentscope.model import DashScopeChatModel
+from agentscope.tool import ToolResponse, Toolkit
+from typing import Any, Callable, Optional
+
 """Auto-generated from  by agentscript-cli.
 AgentScope implementation of .
 """
-
-from typing import Any
 
 class StateManager:
     """Shared state mirroring AgentScript variables."""
@@ -27,8 +38,7 @@ class StateManager:
     def get(self, name: str) -> Any:
         return getattr(self, name, None)
 
-
-async def verify_customer_identity(email: str, security_question_answer: str | None = None) -> dict:
+async def verify_customer_identity_impl(email: str, security_question_answer: str | None = None) -> dict:
     """Verifies customer identity using email address and security questions
 
     Args:
@@ -43,8 +53,13 @@ async def verify_customer_identity(email: str, security_question_answer: str | N
 
     raise NotImplementedError("Action target: flow://VerifyCustomerIdentity")
 
+async def verify_customer_identity(email: str, security_question_answer: str | None = None) -> ToolResponse:
+    """Verifies customer identity using email address and security questions"""
 
-async def get_customer_case_history(customer_id: str) -> dict:
+    result = await verify_customer_identity_impl(email=email, security_question_answer=security_question_answer)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def get_customer_case_history_impl(customer_id: str) -> dict:
     """Retrieves customer's previous case history for context
 
     Args:
@@ -58,8 +73,13 @@ async def get_customer_case_history(customer_id: str) -> dict:
 
     raise NotImplementedError("Action target: flow://GetCustomerCaseHistory")
 
+async def get_customer_case_history(customer_id: str) -> ToolResponse:
+    """Retrieves customer's previous case history for context"""
 
-async def create_support_case(customer_id: str, case_type: str, case_description: str, priority: str) -> dict:
+    result = await get_customer_case_history_impl(customer_id=customer_id)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def create_support_case_impl(customer_id: str, case_type: str, case_description: str, priority: str) -> dict:
     """Creates a new support case in the system
 
     Args:
@@ -76,8 +96,13 @@ async def create_support_case(customer_id: str, case_type: str, case_description
 
     raise NotImplementedError("Action target: flow://CreateSupportCase")
 
+async def create_support_case(customer_id: str, case_type: str, case_description: str, priority: str) -> ToolResponse:
+    """Creates a new support case in the system"""
 
-async def calculate_escalation_score(case_type: str, customer_tier: str, previous_escalations: int, case_complexity: str) -> dict:
+    result = await create_support_case_impl(customer_id=customer_id, case_type=case_type, case_description=case_description, priority=priority)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def calculate_escalation_score_impl(case_type: str, customer_tier: str, previous_escalations: int, case_complexity: str) -> dict:
     """Calculates escalation score based on case details and customer history
 
     Args:
@@ -94,8 +119,13 @@ async def calculate_escalation_score(case_type: str, customer_tier: str, previou
 
     raise NotImplementedError("Action target: flow://CalculateEscalationScore")
 
+async def calculate_escalation_score(case_type: str, customer_tier: str, previous_escalations: int, case_complexity: str) -> ToolResponse:
+    """Calculates escalation score based on case details and customer history"""
 
-async def initiate_escalation(case_number: str, escalation_tier: str, escalation_reason: str, customer_id: str) -> dict:
+    result = await calculate_escalation_score_impl(case_type=case_type, customer_tier=customer_tier, previous_escalations=previous_escalations, case_complexity=case_complexity)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def initiate_escalation_impl(case_number: str, escalation_tier: str, escalation_reason: str, customer_id: str) -> dict:
     """Initiates escalation to appropriate support tier
 
     Args:
@@ -112,8 +142,13 @@ async def initiate_escalation(case_number: str, escalation_tier: str, escalation
 
     raise NotImplementedError("Action target: flow://InitiateEscalation")
 
+async def initiate_escalation(case_number: str, escalation_tier: str, escalation_reason: str, customer_id: str) -> ToolResponse:
+    """Initiates escalation to appropriate support tier"""
 
-async def notify_customer(customer_id: str, case_number: str, escalation_details: str) -> dict:
+    result = await initiate_escalation_impl(case_number=case_number, escalation_tier=escalation_tier, escalation_reason=escalation_reason, customer_id=customer_id)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def notify_customer_impl(customer_id: str, case_number: str, escalation_details: str) -> dict:
     """Notifies customer about escalation and next steps
 
     Args:
@@ -129,8 +164,13 @@ async def notify_customer(customer_id: str, case_number: str, escalation_details
 
     raise NotImplementedError("Action target: flow://NotifyCustomer")
 
+async def notify_customer(customer_id: str, case_number: str, escalation_details: str) -> ToolResponse:
+    """Notifies customer about escalation and next steps"""
 
-async def provide_solution(case_type: str, case_description: str, customer_tier: str) -> dict:
+    result = await notify_customer_impl(customer_id=customer_id, case_number=case_number, escalation_details=escalation_details)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def provide_solution_impl(case_type: str, case_description: str, customer_tier: str) -> dict:
     """Provides solution recommendation based on case type
 
     Args:
@@ -146,8 +186,13 @@ async def provide_solution(case_type: str, case_description: str, customer_tier:
 
     raise NotImplementedError("Action target: flow://ProvideSolution")
 
+async def provide_solution(case_type: str, case_description: str, customer_tier: str) -> ToolResponse:
+    """Provides solution recommendation based on case type"""
 
-async def close_case(case_number: str, resolution_summary: str, customer_satisfied: bool) -> dict:
+    result = await provide_solution_impl(case_type=case_type, case_description=case_description, customer_tier=customer_tier)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+
+async def close_case_impl(case_number: str, resolution_summary: str, customer_satisfied: bool) -> dict:
     """Closes resolved case and gathers customer satisfaction feedback
 
     Args:
@@ -163,14 +208,18 @@ async def close_case(case_number: str, resolution_summary: str, customer_satisfi
 
     raise NotImplementedError("Action target: flow://CloseCase")
 
+async def close_case(case_number: str, resolution_summary: str, customer_satisfied: bool) -> ToolResponse:
+    """Closes resolved case and gathers customer satisfaction feedback"""
 
-from agentscope.agent import ReActAgent
-from agentscope.message import Msg
+    result = await close_case_impl(case_number=case_number, resolution_summary=resolution_summary, customer_satisfied=customer_satisfied)
+    return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
 
 class CustomerVerificationWrapper:
-    def __init__(self, agent: ReActAgent, state: StateManager):
+    def __init__(self, agent: ReActAgent, state: StateManager, resolve_impl=None):
         self.agent = agent
         self.state = state
+        self._resolve_impl = resolve_impl
+        self.next_agent = None
 
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
@@ -179,30 +228,28 @@ class CustomerVerificationWrapper:
         return result
 
     async def before_call(self, msg: Msg) -> None:
-        if state.get("customer_verified") == False:
-            state.set("escalation_score", 0)
-            state.set("case_priority", "normal")
+        if self.state.get("customer_verified") == False:
+            self.state.set("escalation_score", 0)
+            self.state.set("case_priority", "normal")
 
     async def after_call(self, msg: Msg, result: Msg) -> None:
-        if state.get("customer_email") != "":
-            result = await verify_customer_identity(email=state.get("customer_email"), security_question_answer="")
-            state.set("customer_verified", result["customer_found"])
-            state.set("customer_name", result["customer_name"])
-            state.set("customer_id", result["customer_id"])
-        if state.get("customer_verified"):
-            result = await get_customer_case_history(customer_id=state.get("customer_id"))
-            state.set("escalation_score", result["previous_cases"])
-        if state.get("customer_verified"):
-            pass  # transition to case_creation
-
-
-from agentscope.agent import ReActAgent
-from agentscope.message import Msg
+        if self.state.get("customer_email") != "":
+            result = await self._resolve_impl("verify_customer_identity", **{"email": self.state.get("customer_email"), "security_question_answer": ""})
+            self.state.set("customer_verified", result["customer_found"])
+            self.state.set("customer_name", result["customer_name"])
+            self.state.set("customer_id", result["customer_id"])
+        if self.state.get("customer_verified"):
+            result = await self._resolve_impl("get_customer_case_history", **{"customer_id": self.state.get("customer_id")})
+            self.state.set("escalation_score", result["previous_cases"])
+        if self.state.get("customer_verified"):
+            self.next_agent = "case_creation"
 
 class CaseCreationWrapper:
-    def __init__(self, agent: ReActAgent, state: StateManager):
+    def __init__(self, agent: ReActAgent, state: StateManager, resolve_impl=None):
         self.agent = agent
         self.state = state
+        self._resolve_impl = resolve_impl
+        self.next_agent = None
 
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
@@ -211,37 +258,35 @@ class CaseCreationWrapper:
         return result
 
     async def before_call(self, msg: Msg) -> None:
-        if state.get("case_type") == "billing":
-            state.set("escalation_score", state.get("escalation_score") + 30)
-        if state.get("case_type") == "technical":
-            state.set("escalation_score", state.get("escalation_score") + 40)
-        if state.get("case_type") == "product_problem":
-            state.set("escalation_score", state.get("escalation_score") + 50)
-        if state.get("case_type") == "order_issue":
-            state.set("escalation_score", state.get("escalation_score") + 20)
+        if self.state.get("case_type") == "billing":
+            self.state.set("escalation_score", self.state.get("escalation_score") + 30)
+        elif self.state.get("case_type") == "technical":
+            self.state.set("escalation_score", self.state.get("escalation_score") + 40)
+        elif self.state.get("case_type") == "product_problem":
+            self.state.set("escalation_score", self.state.get("escalation_score") + 50)
+        elif self.state.get("case_type") == "order_issue":
+            self.state.set("escalation_score", self.state.get("escalation_score") + 20)
 
     async def after_call(self, msg: Msg, result: Msg) -> None:
-        if state.get("case_description") != "":
-            result = await create_support_case(customer_id=state.get("customer_id"), case_type=state.get("case_type"), case_description=state.get("case_description"), priority=state.get("case_priority"))
-            state.set("case_number", result["case_number"])
-            result = await calculate_escalation_score(case_type=state.get("case_type"), customer_tier="standard", previous_escalations=1, case_complexity="medium")
-            state.set("escalation_score", result["escalation_score"])
-            state.set("escalation_tier", result["recommended_tier"])
-        if state.get("case_number") != "" and state.get("escalation_score") >= 60:
-            state.set("escalation_required", True)
-            state.set("case_priority", "high")
-            pass  # transition to escalation_assessment
-        if state.get("case_number") != "" and state.get("escalation_score") < 60:
-            pass  # transition to case_resolution
-
-
-from agentscope.agent import ReActAgent
-from agentscope.message import Msg
+        if self.state.get("case_description") != "":
+            result = await self._resolve_impl("create_support_case", **{"customer_id": self.state.get("customer_id"), "case_type": self.state.get("case_type"), "case_description": self.state.get("case_description"), "priority": self.state.get("case_priority")})
+            self.state.set("case_number", result["case_number"])
+            result = await self._resolve_impl("calculate_escalation_score", **{"case_type": self.state.get("case_type"), "customer_tier": "standard", "previous_escalations": 1, "case_complexity": "medium"})
+            self.state.set("escalation_score", result["escalation_score"])
+            self.state.set("escalation_tier", result["recommended_tier"])
+        if self.state.get("case_number") != "" and self.state.get("escalation_score") >= 60:
+            self.state.set("escalation_required", True)
+            self.state.set("case_priority", "high")
+            self.next_agent = "escalation_assessment"
+        elif self.state.get("case_number") != "" and self.state.get("escalation_score") < 60:
+            self.next_agent = "case_resolution"
 
 class EscalationAssessmentWrapper:
-    def __init__(self, agent: ReActAgent, state: StateManager):
+    def __init__(self, agent: ReActAgent, state: StateManager, resolve_impl=None):
         self.agent = agent
         self.state = state
+        self._resolve_impl = resolve_impl
+        self.next_agent = None
 
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
@@ -250,29 +295,27 @@ class EscalationAssessmentWrapper:
         return result
 
     async def before_call(self, msg: Msg) -> None:
-        if state.get("escalation_score") >= 80:
-            state.set("escalation_tier", "senior_manager")
-            state.set("case_priority", "urgent")
-        if state.get("escalation_score") >= 60:
-            state.set("escalation_tier", "manager")
-            state.set("case_priority", "high")
-        if state.get("escalation_score") >= 40:
-            state.set("escalation_tier", "l2_support")
+        if self.state.get("escalation_score") >= 80:
+            self.state.set("escalation_tier", "senior_manager")
+            self.state.set("case_priority", "urgent")
+        elif self.state.get("escalation_score") >= 60:
+            self.state.set("escalation_tier", "manager")
+            self.state.set("case_priority", "high")
+        elif self.state.get("escalation_score") >= 40:
+            self.state.set("escalation_tier", "l2_support")
 
     async def after_call(self, msg: Msg, result: Msg) -> None:
-        if state.get("escalation_tier") != "":
-            result = await initiate_escalation(case_number=state.get("case_number"), escalation_tier=state.get("escalation_tier"), escalation_reason="Complex issue requiring specialized expertise", customer_id=state.get("customer_id"))
-            state.set("escalation_required", True)
-            result = await notify_customer(customer_id=state.get("customer_id"), case_number=state.get("case_number"), escalation_details="Your case has been escalated to " + state.get("escalation_tier"))
-
-
-from agentscope.agent import ReActAgent
-from agentscope.message import Msg
+        if self.state.get("escalation_tier") != "":
+            result = await self._resolve_impl("initiate_escalation", **{"case_number": self.state.get("case_number"), "escalation_tier": self.state.get("escalation_tier"), "escalation_reason": "Complex issue requiring specialized expertise", "customer_id": self.state.get("customer_id")})
+            self.state.set("escalation_required", True)
+            result = await self._resolve_impl("notify_customer", **{"customer_id": self.state.get("customer_id"), "case_number": self.state.get("case_number"), "escalation_details": "Your case has been escalated to " + self.state.get("escalation_tier")})
 
 class CaseResolutionWrapper:
-    def __init__(self, agent: ReActAgent, state: StateManager):
+    def __init__(self, agent: ReActAgent, state: StateManager, resolve_impl=None):
         self.agent = agent
         self.state = state
+        self._resolve_impl = resolve_impl
+        self.next_agent = None
 
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
@@ -281,23 +324,14 @@ class CaseResolutionWrapper:
         return result
 
     async def before_call(self, msg: Msg) -> None:
-        if state.get("case_type") != "":
-            result = await provide_solution(case_type=state.get("case_type"), case_description=state.get("case_description"), customer_tier="standard")
+        if self.state.get("case_type") != "":
+            result = await self._resolve_impl("provide_solution", **{"case_type": self.state.get("case_type"), "case_description": self.state.get("case_description"), "customer_tier": "standard"})
 
     async def after_call(self, msg: Msg, result: Msg) -> None:
-        if state.get("case_description") != "":
-            state.set("escalation_score", state.get("escalation_score") + 20)
-        if state.get("case_resolved"):
-            result = await close_case(case_number=state.get("case_number"), resolution_summary="Issue resolved through direct support", customer_satisfied=True)
-
-
-import os
-
-from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.model import DashScopeChatModel
-from agentscope.tool import Toolkit
+        if self.state.get("case_description") != "":
+            self.state.set("escalation_score", self.state.get("escalation_score") + 20)
+        if self.state.get("case_resolved"):
+            result = await self._resolve_impl("close_case", **{"case_number": self.state.get("case_number"), "resolution_summary": "Issue resolved through direct support", "customer_satisfied": True})
 
 def create_customer_verification(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the customer_verification agent."""
@@ -308,7 +342,8 @@ To ensure I can access your account information securely, I'll need to verify yo
 Please provide:
 - Your email address associated with your account
 - Your name as it appears on the account
-What type of issue can I help you with today?"""
+What type of issue can I help you with today?
+CRITICAL: Whenever the user provides any of the following values — customer_email, customer_name, case_type — you MUST immediately call _set_variables_customer_verification(customer_email=<value>, customer_name=<value>, case_type=<value>) to save them before calling any other tool. Do NOT skip this step."""
 
     return ReActAgent(
         name="customer_verification",
@@ -325,28 +360,20 @@ What type of issue can I help you with today?"""
         toolkit=toolkit,
     )
 
-
-import os
-
-from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.model import DashScopeChatModel
-from agentscope.tool import Toolkit
-
 def create_case_creation(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the case_creation agent."""
 
-    sys_prompt = """
-Thank you for verifying your identity, @variables.customer_name!
-I see you have a @variables.case_type issue. Let me gather some details to create your case.
-Current escalation score: @variables.escalation_score/100
-Priority level: @variables.case_priority
+    sys_prompt = f"""
+Thank you for verifying your identity, {state.get("customer_name")}!
+I see you have a {state.get("case_type")} issue. Let me gather some details to create your case.
+Current escalation score: {state.get("escalation_score")}/100
+Priority level: {state.get("case_priority")}
 If case_description is not already provided, ask the user to describe their issue.
 If case_description is already available, set it via set_variables and tell the user you are creating their case now.
 CRITICAL: Do NOT claim the case has been created, do NOT invent case details (case number, assigned agent, etc.).
 The actual case creation happens automatically AFTER your response, so you cannot know the result yet.
-Simply say "I'm creating your case now" or similar."""
+Simply say "I'm creating your case now" or similar.
+CRITICAL: Whenever the user provides any of the following values — case_description — you MUST immediately call _set_variables_case_creation(case_description=<value>) to save them before calling any other tool. Do NOT skip this step."""
 
     return ReActAgent(
         name="case_creation",
@@ -363,31 +390,23 @@ Simply say "I'm creating your case now" or similar."""
         toolkit=toolkit,
     )
 
-
-import os
-
-from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.model import DashScopeChatModel
-from agentscope.tool import Toolkit
-
 def create_escalation_assessment(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the escalation_assessment agent."""
 
-    sys_prompt = """
+    sys_prompt = f"""
 Based on the complexity and nature of your issue, I've determined that your case requires escalation.
 Case Details:
-- Case Number: @variables.case_number
-- Priority: @variables.case_priority
-- Escalation Score: @variables.escalation_score/100
-- Escalation Tier: @variables.escalation_tier
-I'm routing your case to our @variables.escalation_tier team who will be better equipped to handle your specific situation.
+- Case Number: {state.get("case_number")}
+- Priority: {state.get("case_priority")}
+- Escalation Score: {state.get("escalation_score")}/100
+- Escalation Tier: {state.get("escalation_tier")}
+I'm routing your case to our {state.get("escalation_tier")} team who will be better equipped to handle your specific situation.
 You can expect to hear from them within:
 - L2 Support: 2-4 hours
 - Manager: 1-2 hours
 - Senior Manager: 30 minutes
-Is there anything else I can help clarify about your case before the handoff?"""
+Is there anything else I can help clarify about your case before the handoff?
+CRITICAL: Whenever the user provides any of the following values — case_description — you MUST immediately call _set_variables_escalation_assessment(case_description=<value>) to save them before calling any other tool. Do NOT skip this step."""
 
     return ReActAgent(
         name="escalation_assessment",
@@ -404,29 +423,21 @@ Is there anything else I can help clarify about your case before the handoff?"""
         toolkit=toolkit,
     )
 
-
-import os
-
-from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.model import DashScopeChatModel
-from agentscope.tool import Toolkit
-
 def create_case_resolution(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the case_resolution agent."""
 
-    sys_prompt = """
-I'll work to resolve your @variables.case_type issue directly.
-Your Case: @variables.case_number
-Priority: @variables.case_priority
-Issue: @variables.case_description
+    sys_prompt = f"""
+I'll work to resolve your {state.get("case_type")} issue directly.
+Your Case: {state.get("case_number")}
+Priority: {state.get("case_priority")}
+Issue: {state.get("case_description")}
 Based on similar cases, here are the most common solutions:
 1. For order issues: Check order status and tracking information
 2. For billing questions: Review recent charges and payment methods
 3. For technical problems: Verify account settings and try basic troubleshooting
 4. For product issues: Check warranty status and available support options
-Does this help resolve your issue, or do you need me to escalate this to a specialist?"""
+Does this help resolve your issue, or do you need me to escalate this to a specialist?
+CRITICAL: Whenever the user provides any of the following values — case_description — you MUST immediately call _set_variables_case_resolution(case_description=<value>) to save them before calling any other tool. Do NOT skip this step."""
 
     return ReActAgent(
         name="case_resolution",
@@ -443,58 +454,130 @@ Does this help resolve your issue, or do you need me to escalate this to a speci
         toolkit=toolkit,
     )
 
+class AgentBot:
+    """Auto-generated bot class. Supports package import and CLI execution.
 
-import asyncio
-import os
+    Usage::
 
-from agentscope.agent import ReActAgent, UserAgent
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.memory import InMemoryMemory
-from agentscope.message import Msg
-from agentscope.model import DashScopeChatModel
-from agentscope.pipeline import MsgHub
-from agentscope.tool import Toolkit
+        bot = AgentBot(impls={
+            "verify_customer_identity": my_verify_fn,
+            ...
+        })
+        response = await bot.chat("Hello, I need help")
+    """
 
-async def main():
-    state = StateManager()
-    toolkit_customer_verification = Toolkit()
-    toolkit_case_creation = Toolkit()
-    toolkit_escalation_assessment = Toolkit()
-    toolkit_case_resolution = Toolkit()
+    def __init__(self, impls: dict[str, Callable] | None = None):
+        self.state = StateManager()
+        self._impls = impls or {}
+        self._current_agent_name = "customer_verification"
+        self._agents: dict = {}
+        self._build_agents()
 
-    customer_verification = create_customer_verification(state, toolkit_customer_verification)
-    case_creation = create_case_creation(state, toolkit_case_creation)
-    escalation_assessment = create_escalation_assessment(state, toolkit_escalation_assessment)
-    case_resolution = create_case_resolution(state, toolkit_case_resolution)
+    async def _resolve_impl(self, name: str, **kwargs):
+        if name in self._impls:
+            return await self._impls[name](**kwargs)
+        raise NotImplementedError(
+            f"No implementation for '{name}'. Pass via impls={{'{name}': your_fn}}."
+        )
 
-    toolkit_customer_verification.register_tool_function(verify_customer_identity)
-    toolkit_customer_verification.register_tool_function(get_customer_case_history)
-    toolkit_case_creation.register_tool_function(create_support_case)
-    toolkit_case_creation.register_tool_function(calculate_escalation_score)
-    toolkit_escalation_assessment.register_tool_function(initiate_escalation)
-    toolkit_escalation_assessment.register_tool_function(notify_customer)
-    toolkit_case_resolution.register_tool_function(provide_solution)
-    toolkit_case_resolution.register_tool_function(close_case)
+    def _build_agents(self):
+        toolkit_customer_verification = Toolkit()
+        toolkit_case_creation = Toolkit()
+        toolkit_escalation_assessment = Toolkit()
+        toolkit_case_resolution = Toolkit()
 
-    customer_verification_wrapped = CustomerVerificationWrapper(customer_verification, state)
-    case_creation_wrapped = CaseCreationWrapper(case_creation, state)
-    escalation_assessment_wrapped = EscalationAssessmentWrapper(escalation_assessment, state)
-    case_resolution_wrapped = CaseResolutionWrapper(case_resolution, state)
+        customer_verification_agent = create_customer_verification(self.state, toolkit_customer_verification)
+        case_creation_agent = create_case_creation(self.state, toolkit_case_creation)
+        escalation_assessment_agent = create_escalation_assessment(self.state, toolkit_escalation_assessment)
+        case_resolution_agent = create_case_resolution(self.state, toolkit_case_resolution)
 
-    user = UserAgent(name="user")
+        import functools
+        def _make_tool(bot_self, name, fn):
+            @functools.wraps(fn)
+            async def _tool(*args, **kwargs):
+                result = await bot_self._resolve_impl(name, **kwargs)
+                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+            return _tool
 
-    print("Welcome to our customer support! I can help you create a new case, check your order status, or assist with escalating existing issues. How can I help you today?")
+        toolkit_customer_verification.register_tool_function(_make_tool(self, "verify_customer_identity", verify_customer_identity))
+        toolkit_customer_verification.register_tool_function(_make_tool(self, "get_customer_case_history", get_customer_case_history))
+        toolkit_case_creation.register_tool_function(_make_tool(self, "create_support_case", create_support_case))
+        toolkit_case_creation.register_tool_function(_make_tool(self, "calculate_escalation_score", calculate_escalation_score))
+        toolkit_escalation_assessment.register_tool_function(_make_tool(self, "initiate_escalation", initiate_escalation))
+        toolkit_escalation_assessment.register_tool_function(_make_tool(self, "notify_customer", notify_customer))
+        toolkit_case_resolution.register_tool_function(_make_tool(self, "provide_solution", provide_solution))
+        toolkit_case_resolution.register_tool_function(_make_tool(self, "close_case", close_case))
 
-    msg = None
-    while True:
-        try:
-            msg = await customer_verification_wrapped(msg)
-        except Exception as e:
-            print("I apologize, but I'm experiencing technical difficulties. Please try again or contact us directly at support@company.com.")
-        msg = await user(msg)
-        if msg.get_text_content() == "exit":
-            break
+        _captured_state_customer_verification = self.state
+        async def _set_variables_customer_verification(customer_email: str | None = None, customer_name: str | None = None, case_type: str | None = None):
+            """Set state variables for the customer_verification agent. Fields: customer_email, customer_name, case_type"""
+            _captured_state = _captured_state_customer_verification
+            if customer_email is not None: _captured_state.set("customer_email", customer_email)
+            if customer_name is not None: _captured_state.set("customer_name", customer_name)
+            if case_type is not None: _captured_state.set("case_type", case_type)
+            return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
+        toolkit_customer_verification.register_tool_function(_set_variables_customer_verification)
+        _captured_state_case_creation = self.state
+        async def _set_variables_case_creation(case_description: str | None = None):
+            """Set state variables for the case_creation agent. Fields: case_description"""
+            _captured_state = _captured_state_case_creation
+            if case_description is not None: _captured_state.set("case_description", case_description)
+            return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
+        toolkit_case_creation.register_tool_function(_set_variables_case_creation)
+        _captured_state_escalation_assessment = self.state
+        async def _set_variables_escalation_assessment(case_description: str | None = None):
+            """Set state variables for the escalation_assessment agent. Fields: case_description"""
+            _captured_state = _captured_state_escalation_assessment
+            if case_description is not None: _captured_state.set("case_description", case_description)
+            return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
+        toolkit_escalation_assessment.register_tool_function(_set_variables_escalation_assessment)
+        _captured_state_case_resolution = self.state
+        async def _set_variables_case_resolution(case_description: str | None = None):
+            """Set state variables for the case_resolution agent. Fields: case_description"""
+            _captured_state = _captured_state_case_resolution
+            if case_description is not None: _captured_state.set("case_description", case_description)
+            return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
+        toolkit_case_resolution.register_tool_function(_set_variables_case_resolution)
+        customer_verification_wrapped = CustomerVerificationWrapper(customer_verification_agent, self.state, self._resolve_impl)
+        case_creation_wrapped = CaseCreationWrapper(case_creation_agent, self.state, self._resolve_impl)
+        escalation_assessment_wrapped = EscalationAssessmentWrapper(escalation_assessment_agent, self.state, self._resolve_impl)
+        case_resolution_wrapped = CaseResolutionWrapper(case_resolution_agent, self.state, self._resolve_impl)
+
+        self._agents = {"customer_verification": customer_verification_wrapped, "case_creation": case_creation_wrapped, "escalation_assessment": escalation_assessment_wrapped, "case_resolution": case_resolution_wrapped}
+
+    async def chat(self, user_message: str) -> str:
+        """Send a message and get a response. Maintains conversation state across calls."""
+        msg = Msg(name="user", content=user_message, role="user")
+        while True:
+            agent = self._agents[self._current_agent_name]
+            try:
+                result = await agent(msg)
+            except Exception as e:
+                return "I apologize, but I'm experiencing technical difficulties. Please try again or contact us directly at support@company.com."
+            if hasattr(agent, "next_agent") and agent.next_agent:
+                self._current_agent_name = agent.next_agent
+                agent.next_agent = None
+                msg = result
+                continue
+            return result.get_text_content() if hasattr(result, "get_text_content") else str(result)
+
+    def reset(self):
+        """Reset state and restart from the beginning (new session)."""
+        self.state = StateManager()
+        self._current_agent_name = "customer_verification"
+        self._build_agents()
+
+    async def run_cli(self):
+        """Interactive CLI loop (replaces old main())."""
+        print("Welcome to our customer support! I can help you create a new case, check your order status, or assist with escalating existing issues. How can I help you today?")
+        while True:
+            user_input = input("You: ").strip()
+            if user_input.lower() in ("exit", "quit"):
+                break
+            response = await self.chat(user_input)
+            print(f"Bot: {response}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _impls = {"verify_customer_identity": verify_customer_identity_impl, "get_customer_case_history": get_customer_case_history_impl, "create_support_case": create_support_case_impl, "calculate_escalation_score": calculate_escalation_score_impl, "initiate_escalation": initiate_escalation_impl, "notify_customer": notify_customer_impl, "provide_solution": provide_solution_impl, "close_case": close_case_impl}
+    asyncio.run(AgentBot(impls=_impls).run_cli())
