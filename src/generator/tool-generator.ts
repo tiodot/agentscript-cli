@@ -43,9 +43,74 @@ export class ToolGenerator {
     const funcName = this.toSnakeCase(action.name);
     const params = this.formatParams(action.inputs);
 
-    w.writeLine(`async def ${funcName}(${params}) -> dict:`);
+    w.addImport('json');
+    w.addImportFrom('agentscope.tool', 'ToolResponse');
+    w.addImportFrom('agentscope.message', 'TextBlock');
+
+    // Internal function returning dict
+    this.writeImplFunction(w, funcName, params, action, 'stub');
+
+    w.writeBlankLine();
+
+    // Public wrapper returning ToolResponse
+    this.writeToolResponseWrapper(w, funcName, params, action);
+
+    return w.toString();
+  }
+
+  generateMock(action: ActionData): string {
+    const w = new PythonWriter();
+    const funcName = this.toSnakeCase(action.name);
+    const params = this.formatParams(action.inputs);
+
+    w.addImport('json');
+    w.addImportFrom('agentscope.tool', 'ToolResponse');
+    w.addImportFrom('agentscope.message', 'TextBlock');
+
+    // Internal function returning dict (mock)
+    this.writeImplFunction(w, funcName, params, action, 'mock');
+
+    w.writeBlankLine();
+
+    // Public wrapper returning ToolResponse
+    this.writeToolResponseWrapper(w, funcName, params, action);
+
+    return w.toString();
+  }
+
+  private mockValue(type: string, name?: string): string {
+    switch (type) {
+      case 'string':
+        // Return plausible example values based on parameter name
+        if (name) {
+          if (name.includes('email')) return '"user@example.com"';
+          if (name.includes('name')) return '"Mock User"';
+          if (name.includes('id')) return '"MOCK_ID_001"';
+          if (name.includes('number') || name.includes('case_number')) return '"MOCK-001"';
+          if (name.includes('type') || name.includes('tier') || name.includes('status')) return '"mock_type"';
+          if (name.includes('description') || name.includes('reason') || name.includes('details')) return '"Mock description"';
+          if (name.includes('steps') || name.includes('summary') || name.includes('resolution')) return '"Mock steps"';
+          if (name.includes('sla')) return '"2 hours"';
+          if (name.includes('method')) return '"email"';
+        }
+        return '"mock_value"';
+      case 'number': return '0';
+      case 'boolean': return 'True';
+      case 'object': return '{}';
+      case 'list[object]': return '[]';
+      default: return 'None';
+    }
+  }
+
+  /** Write the _impl function that returns dict (business logic, called by after_call) */
+  private writeImplFunction(w: PythonWriter, funcName: string, params: string, action: ActionData, mode: 'stub' | 'mock'): void {
+    const implName = `${funcName}_impl`;
+    w.writeLine(`async def ${implName}(${params}) -> dict:`);
     w.setIndent(1);
     w.writeLine(`"""${action.description}`);
+    if (mode === 'mock') {
+      w.writeLine('(MOCK IMPLEMENTATION)');
+    }
     if (action.inputs.length > 0) {
       w.writeBlankLine();
       w.writeLine('Args:');
@@ -63,47 +128,112 @@ export class ToolGenerator {
       w.writeLine(`dict with keys: ${outputKeys}`);
       w.setIndent(1);
     }
-    if (action.target) {
+    if (action.target && mode === 'stub') {
       w.writeBlankLine();
       w.writeLine(`Target: ${action.target}`);
     }
     w.writeLine('"""');
     w.writeBlankLine();
-    w.writeLine(`raise NotImplementedError("Action target: ${action.target ?? action.name}")`);
 
-    return w.toString();
+    if (mode === 'stub') {
+      w.writeLine(`raise NotImplementedError("Action target: ${action.target ?? action.name}")`);
+    } else {
+      w.writeLine('return {');
+      w.setIndent(2);
+      for (const o of action.outputs) {
+        w.writeLine(`"${o.name}": ${this.mockValue(o.type, o.name)},`);
+      }
+      w.setIndent(1);
+      w.writeLine('}');
+    }
+    w.setIndent(0);
   }
 
-  generateMock(action: ActionData): string {
+  /** Write the public ToolResponse wrapper (registered with Toolkit) */
+  private writeToolResponseWrapper(w: PythonWriter, funcName: string, params: string, action: ActionData): void {
+    const implName = `${funcName}_impl`;
+    w.writeLine(`async def ${funcName}(${params}) -> ToolResponse:`);
+    w.setIndent(1);
+    w.writeLine(`"""${action.description}"""`);
+    w.writeBlankLine();
+    w.writeLine(`result = await ${implName}(${action.inputs.map(p => `${p.name}=${p.name}`).join(', ')})`);
+    w.writeLine('return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])');
+    w.setIndent(0);
+  }
+
+  /**
+   * Generate a standalone Python scaffold file with one `_impl` stub per action.
+   * The stubs have full typed signatures and docstrings but just `pass` bodies,
+   * ready for the user to implement and pass back via --actions.
+   */
+  generateActionsScaffold(actions: ActionData[]): string {
+    const lines: string[] = [
+      '"""Action implementations — fill in each function and pass this file via --actions."""',
+      'from typing import Any',
+      '',
+    ];
+
+    for (const action of actions) {
+      const funcName = this.toSnakeCase(action.name);
+      const params = this.formatParams(action.inputs);
+      const implName = `${funcName}_impl`;
+
+      lines.push(`async def ${implName}(${params}) -> dict:`);
+      lines.push(`    """${action.description}`);
+      if (action.inputs.length > 0) {
+        lines.push('');
+        lines.push('    Args:');
+        for (const p of action.inputs) {
+          lines.push(`        ${p.name}: ${p.description ?? p.type}`);
+        }
+      }
+      if (action.outputs.length > 0) {
+        lines.push('');
+        lines.push('    Returns:');
+        const keys = action.outputs.map(o => `${o.name}: ${o.type}`).join(', ');
+        lines.push(`        dict with keys — ${keys}`);
+      }
+      if (action.target) {
+        lines.push('');
+        lines.push(`    Target: ${action.target}`);
+      }
+      lines.push('    """');
+      lines.push('    pass');
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  generateStubSection(action: ActionData): { code: string; writer: PythonWriter } {
     const w = new PythonWriter();
     const funcName = this.toSnakeCase(action.name);
     const params = this.formatParams(action.inputs);
 
-    w.writeLine(`async def ${funcName}(${params}) -> dict:`);
-    w.setIndent(1);
-    w.writeLine(`"""${action.description}`);
-    w.writeLine('(MOCK IMPLEMENTATION)');
-    w.writeLine('"""');
-    w.writeBlankLine();
-    w.writeLine('return {');
-    w.setIndent(2);
-    for (const o of action.outputs) {
-      w.writeLine(`"${o.name}": ${this.mockValue(o.type)},`);
-    }
-    w.setIndent(1);
-    w.writeLine('}');
+    w.addImport('json');
+    w.addImportFrom('agentscope.tool', 'ToolResponse');
+    w.addImportFrom('agentscope.message', 'TextBlock');
 
-    return w.toString();
+    this.writeImplFunction(w, funcName, params, action, 'stub');
+    w.writeBlankLine();
+    this.writeToolResponseWrapper(w, funcName, params, action);
+
+    return { code: w.toCodeOnly(), writer: w };
   }
 
-  private mockValue(type: string): string {
-    switch (type) {
-      case 'string': return '""';
-      case 'number': return '0';
-      case 'boolean': return 'False';
-      case 'object': return '{}';
-      case 'list[object]': return '[]';
-      default: return 'None';
-    }
+  generateMockSection(action: ActionData): { code: string; writer: PythonWriter } {
+    const w = new PythonWriter();
+    const funcName = this.toSnakeCase(action.name);
+    const params = this.formatParams(action.inputs);
+
+    w.addImport('json');
+    w.addImportFrom('agentscope.tool', 'ToolResponse');
+    w.addImportFrom('agentscope.message', 'TextBlock');
+
+    this.writeImplFunction(w, funcName, params, action, 'mock');
+    w.writeBlankLine();
+    this.writeToolResponseWrapper(w, funcName, params, action);
+
+    return { code: w.toCodeOnly(), writer: w };
   }
 }
