@@ -88,7 +88,7 @@ start_agent customer_verification:
             inputs:
                 customer_id: string
                     label: "Customer ID"
-                    description: "Salesforce Contact ID (e.g. 003C600000613YKIAY) — do NOT use email address"
+                    description: "Customer identifier"
                     is_required: True
             outputs:
                 previous_cases: number
@@ -142,7 +142,7 @@ start_agent customer_verification:
                 description: "Create a new support case"
 
     after_reasoning:
-        if @variables.customer_email != "":
+        if @variables.customer_email != "" and @variables.customer_name != "":
             run @actions.Verify_Customer_Identity
                 with email=@variables.customer_email
                 with security_question_answer=""
@@ -156,7 +156,7 @@ start_agent customer_verification:
                 with customer_id=@variables.customer_id
                 set @variables.escalation_score = @outputs.previous_cases
 
-        if @variables.customer_verified:
+        if @variables.case_type != "":
             transition to @topic.case_creation
 
 topic case_creation:
@@ -171,7 +171,7 @@ topic case_creation:
             inputs:
                 customer_id: string
                     label: "Customer ID"
-                    description: "Salesforce Contact ID (e.g. 003C600000613YKIAY) — do NOT use email address"
+                    description: "Customer identifier"
                     is_required: True
                 case_type: string
                     label: "Case Type"
@@ -250,11 +250,7 @@ topic case_creation:
             |  I see you have a {! @variables.case_type } issue. Let me gather some details to create your case.
             |  Current escalation score: {! @variables.escalation_score }/100
             |  Priority level: {! @variables.case_priority }
-            |  If case_description is not already provided, ask the user to describe their issue.
-            |  If case_description is already available, set it via set_variables and tell the user you are creating their case now.
-            |  CRITICAL: Do NOT claim the case has been created, do NOT invent case details (case number, assigned agent, etc.).
-            |  The actual case creation happens automatically AFTER your response, so you cannot know the result yet.
-            |  Simply say "I'm creating your case now" or similar.
+            |  Please describe your issue in detail. The more specific information you can provide, the better I can assist you.
 
         actions:
             create_case: @actions.Create_Support_Case
@@ -299,11 +295,11 @@ topic case_creation:
                 set @variables.escalation_score = @outputs.escalation_score
                 set @variables.escalation_tier = @outputs.recommended_tier
 
-        if @variables.case_number != "" and @variables.escalation_score >= 60:
+        if @variables.escalation_score >= 60:
             set @variables.escalation_required = True
             set @variables.case_priority = "high"
             transition to @topic.escalation_assessment
-        if @variables.case_number != "" and @variables.escalation_score < 60:
+        if @variables.escalation_score < 60:
             transition to @topic.case_resolution
 
 topic escalation_assessment:
@@ -330,7 +326,7 @@ topic escalation_assessment:
                     is_required: True
                 customer_id: string
                     label: "Customer ID"
-                    description: "Salesforce Contact ID (e.g. 003C600000613YKIAY) — do NOT use email address"
+                    description: "Customer identifier"
                     is_required: True
             outputs:
                 escalation_approved: boolean

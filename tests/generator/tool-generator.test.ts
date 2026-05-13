@@ -42,8 +42,8 @@ describe('ToolGenerator', () => {
     const gen = new ToolGenerator();
     const code = gen.generateMock(action);
     expect(code).toContain('async def verify_customer');
-    expect(code).toContain('"customer_found": False');
-    expect(code).toContain('"customer_name": ""');
+    expect(code).toContain('"customer_found": True');
+    expect(code).toContain('"customer_name": "Mock User"');
   });
 
   it('converts action name to snake_case', () => {

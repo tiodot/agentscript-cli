@@ -60,6 +60,26 @@ export class PythonWriter {
     return allLines.join('\n') + '\n';
   }
 
+  /** Return code lines only (no import block). */
+  toCodeOnly(): string {
+    return this.lines.join('\n') + '\n';
+  }
+
+  /** Merge imports from another PythonWriter into this one. */
+  mergeImportsFrom(other: PythonWriter): void {
+    for (const imp of other.imports) {
+      this.imports.add(imp);
+    }
+    for (const [module, names] of other.fromImports) {
+      if (!this.fromImports.has(module)) {
+        this.fromImports.set(module, new Set());
+      }
+      for (const name of names) {
+        this.fromImports.get(module)!.add(name);
+      }
+    }
+  }
+
   static join(writers: PythonWriter[], separator: string = '\n\n'): string {
     return writers.map(w => w.toString().trimEnd()).join(separator) + '\n';
   }

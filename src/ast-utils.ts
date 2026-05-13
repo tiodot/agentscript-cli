@@ -203,10 +203,16 @@ function exprToString(expr: any): string {
     return expr.__children.map(exprToString).join('');
   }
 
+  // Boxed String object (e.g. MemberExpression.property in ReasoningActionBlock)
+  // instanceof check is safest; constructor.name can be shadowed
+  if (expr instanceof String || (typeof expr === 'object' && expr.constructor === String)) {
+    return String(expr);
+  }
+
   // Generic fallback: if the node has a .value property, use strVal
   if (expr.value !== undefined) return strVal(expr);
 
-  // Fallback: try __emit or stringify
+  // Last-resort: coerce to string
   return String(expr);
 }
 
@@ -370,38 +376,51 @@ function extractParam(name: string, decl: any): ParamData {
 
 function extractReasoningAction(name: string, block: any): ReasoningActionData {
   const description = strVal(block?.description);
-  // The reference for @utils.transition, @utils.setVariables etc.
-  const reference = exprToString(block?.reference ?? block?.__reference);
 
-  // with bindings
+  // The reference lives in the first ValueChild's .value (a MemberExpression like @utils.setVariables).
+  // Fall back to block.reference / block.__reference for older AST shapes.
+  let reference = '';
+  if (block?.__children) {
+    for (const child of block.__children) {
+      const childKind = child?.__kind ?? child?.constructor?.name;
+      if (childKind === 'ValueChild' && child.value != null) {
+        reference = exprToString(child.value);
+        break;
+      }
+    }
+  }
+  if (!reference) {
+    reference = exprToString(block?.reference ?? block?.__reference);
+  }
+
+  // with / set bindings: nodes are wrapped in StatementChild — unwrap first
   const withBindings: { param: string; value: string }[] = [];
-  if (block?.with) {
+  const setBindings: { variable: string; value: string }[] = [];
+
+  if (block?.__children) {
+    for (const child of block.__children) {
+      // Unwrap StatementChild / FieldChild wrappers
+      const childKind = child?.__kind ?? child?.constructor?.name;
+      const inner = (childKind === 'StatementChild' || childKind === 'FieldChild') ? child.value : child;
+      const innerKind = inner?.__kind ?? inner?.constructor?.name;
+
+      if (innerKind === 'WithClause') {
+        withBindings.push({ param: inner.param ?? strVal(inner.__param), value: exprToString(inner.value) });
+      } else if (innerKind === 'SetClause') {
+        setBindings.push({ variable: exprToString(inner.target), value: exprToString(inner.value) });
+      }
+    }
+  }
+
+  // Legacy paths (older AST shapes)
+  if (withBindings.length === 0 && block?.with) {
     for (const { name: wName, value: wVal } of iterChildren(block.with)) {
       withBindings.push({ param: wName, value: exprToString(wVal) });
     }
   }
-  // Also check __children for WithClause nodes
-  if (block?.__children) {
-    for (const child of block.__children) {
-      if (child.__kind === 'WithClause' || child.constructor?.name === 'WithClause') {
-        withBindings.push({ param: child.param ?? strVal(child.__param), value: exprToString(child.value) });
-      }
-    }
-  }
-
-  // set bindings
-  const setBindings: { variable: string; value: string }[] = [];
-  if (block?.set) {
+  if (setBindings.length === 0 && block?.set) {
     for (const { name: sName, value: sVal } of iterChildren(block.set)) {
       setBindings.push({ variable: sName, value: exprToString(sVal) });
-    }
-  }
-  // Also check __children for SetClause nodes
-  if (block?.__children) {
-    for (const child of block.__children) {
-      if (child.__kind === 'SetClause' || child.constructor?.name === 'SetClause') {
-        setBindings.push({ variable: exprToString(child.target), value: exprToString(child.value) });
-      }
     }
   }
 

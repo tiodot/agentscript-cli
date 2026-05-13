@@ -20,7 +20,8 @@ describe('convert', () => {
     const source = readFileSync(resolve(examplesDir, 'hello_world.agent'), 'utf-8');
     const result = convert(source, { mock: false });
     expect(result).toContain('class StateManager');
-    expect(result).toContain('async def main');
+    expect(result).toContain('async def chat');
+    expect(result).toContain('async def run_cli');
     expect(result).toContain('ReActAgent');
     expect(result.length).toBeGreaterThan(100);
   });
@@ -29,7 +30,8 @@ describe('convert', () => {
     const source = readFileSync(resolve(examplesDir, 'weather.agent'), 'utf-8');
     const result = convert(source, { mock: false });
     expect(result).toContain('class StateManager');
-    expect(result).toContain('async def main');
+    expect(result).toContain('async def chat');
+    expect(result).toContain('async def run_cli');
     expect(result).toContain('ReActAgent');
     expect(result).toContain('weather_service_router');
   });

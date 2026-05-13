@@ -9,6 +9,12 @@ export interface GenerateOptions {
   mock: boolean;
 }
 
+/** A code section with an optional PythonWriter for import collection. */
+interface CodeSection {
+  code: string;
+  writer?: PythonWriter;
+}
+
 export class CodeGenerator {
   private stateGen = new StateGenerator();
   private toolGen = new ToolGenerator();
@@ -22,37 +28,54 @@ export class CodeGenerator {
     subagents: SubagentData[],
     options: GenerateOptions,
   ): string {
-    const sections: string[] = [];
+    const sections: CodeSection[] = [];
 
     // Module docstring
-    sections.push(`"""Auto-generated from ${config.agentName} by agentscript-cli.\nAgentScope implementation of ${config.agentName}.\n"""`);
+    sections.push({ code: `"""Auto-generated from ${config.agentName} by agentscript-cli.\nAgentScope implementation of ${config.agentName}.\n"""` });
 
     // StateManager
-    sections.push(this.stateGen.generate(variables));
+    sections.push(this.stateGen.generateSection(variables));
 
     // Tool stubs/mocks
     const allActions = this.collectAllActions(subagents);
-    const toolSection = allActions.map(a =>
-      options.mock ? this.toolGen.generateMock(a) : this.toolGen.generateStub(a)
-    ).join('\n\n');
-    sections.push(toolSection);
+    for (const action of allActions) {
+      sections.push(options.mock ? this.toolGen.generateMockSection(action) : this.toolGen.generateStubSection(action));
+    }
 
     // AgentWrapper classes
     for (const sa of subagents) {
       if (sa.beforeReasoning.length > 0 || sa.afterReasoning.length > 0) {
-        sections.push(this.pipelineGen.generateAgentWrapper(sa));
+        sections.push(this.pipelineGen.generateAgentWrapperSection(sa));
       }
     }
 
     // Agent factories
     for (const sa of subagents) {
-      sections.push(this.agentGen.generateFactory(sa));
+      sections.push(this.agentGen.generateFactorySection(sa));
     }
 
     // Main + pipeline
-    sections.push(this.pipelineGen.generateMain(config, system, subagents));
+    sections.push(this.pipelineGen.generateMainSection(config, system, subagents));
 
-    return sections.join('\n\n');
+    // Collect all imports into a single master writer
+    const masterWriter = new PythonWriter();
+    for (const section of sections) {
+      if (section.writer) {
+        masterWriter.mergeImportsFrom(section.writer);
+      }
+    }
+
+    // Build output: imports first, then code sections (without their own imports)
+    const parts: string[] = [];
+    const importLines = masterWriter.getImportLines();
+    if (importLines.length > 0) {
+      parts.push(importLines.join('\n'));
+    }
+    for (const section of sections) {
+      parts.push(section.code.trimEnd());
+    }
+
+    return parts.join('\n\n') + '\n';
   }
 
   private collectAllActions(subagents: SubagentData[]): ActionData[] {

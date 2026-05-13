@@ -24,7 +24,7 @@ describe('LogicGenerator', () => {
     };
     const gen = new LogicGenerator();
     const code = gen.generateStatement(stmt);
-    expect(code).toContain('result = await verify_customer_identity(email=state.get("customer_email"))');
+    expect(code).toContain('result = await verify_customer_identity_impl(email=state.get("customer_email"))');
     expect(code).toContain('state.set("customer_verified", result["customer_found"])');
   });
 
@@ -46,13 +46,39 @@ describe('LogicGenerator', () => {
     };
     const gen = new LogicGenerator();
     const code = gen.generateStatement(stmt);
-    expect(code).toContain('pass  # transition to case_creation');
+    expect(code).toContain('self.next_agent = "case_creation"');
   });
 
   it('converts @references to Python expressions', () => {
     const gen = new LogicGenerator();
     expect(gen.convertRef('@variables.customer_email')).toBe('state.get("customer_email")');
+    expect(gen.convertRef('@variables.customer_email', 'self.state')).toBe('self.state.get("customer_email")');
     expect(gen.convertRef('@outputs.case_number')).toBe('result["case_number"]');
     expect(gen.convertRef('"literal"')).toBe('"literal"');
+  });
+
+  it('generates elif for cascading conditions on same variable', () => {
+    const stmts: LogicStatement[] = [
+      { kind: 'if', condition: '@variables.escalation_score >= 80', body: [{ kind: 'set', variable: '@variables.escalation_tier', value: '"senior_manager"' }] },
+      { kind: 'if', condition: '@variables.escalation_score >= 60', body: [{ kind: 'set', variable: '@variables.escalation_tier', value: '"manager"' }] },
+      { kind: 'if', condition: '@variables.escalation_score >= 40', body: [{ kind: 'set', variable: '@variables.escalation_tier', value: '"l2_support"' }] },
+    ];
+    const gen = new LogicGenerator();
+    const code = gen.generateStatements(stmts, 0, 'self.state');
+    expect(code).toContain('if self.state.get("escalation_score") >= 80:');
+    expect(code).toContain('elif self.state.get("escalation_score") >= 60:');
+    expect(code).toContain('elif self.state.get("escalation_score") >= 40:');
+  });
+
+  it('keeps if for identical conditions (independent checks)', () => {
+    const stmts: LogicStatement[] = [
+      { kind: 'if', condition: '@variables.customer_verified', body: [{ kind: 'set', variable: '@variables.escalation_score', value: '@outputs.previous_cases' }] },
+      { kind: 'if', condition: '@variables.customer_verified', body: [{ kind: 'transition', target: '@topic.case_creation' }] },
+    ];
+    const gen = new LogicGenerator();
+    const code = gen.generateStatements(stmts, 0, 'self.state');
+    // Both should be 'if', not 'elif' — they're independent operations on same check
+    expect(code).toContain('if self.state.get("customer_verified"):');
+    expect(code).not.toContain('elif self.state.get("customer_verified"):');
   });
 });

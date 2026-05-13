@@ -3,7 +3,7 @@ import { PipelineGenerator } from '../../src/generator/pipeline-generator';
 import type { SubagentData, SystemData, ConfigData } from '../../src/ast-utils';
 
 describe('PipelineGenerator', () => {
-  it('generates main() function with agent creation loop', () => {
+  it('generates Bot class with chat() and run_cli()', () => {
     const config: ConfigData = { agentName: 'WeatherBot', defaultAgentUser: 'test@test.com' };
     const system: SystemData = {
       instructions: 'You are a weather bot.',
@@ -16,11 +16,14 @@ describe('PipelineGenerator', () => {
     ];
     const gen = new PipelineGenerator();
     const code = gen.generateMain(config, system, subagents);
-    expect(code).toContain('async def main():');
-    expect(code).toContain('state = StateManager()');
-    expect(code).toContain('router = create_router');
-    expect(code).toContain('UserAgent');
+    expect(code).toContain('class WeatherBotBot:');
+    expect(code).toContain('async def chat(self, user_message: str)');
+    expect(code).toContain('async def run_cli(self)');
+    expect(code).toContain('def _build_agents(self)');
+    expect(code).toContain('self.state = StateManager()');
+    expect(code).toContain('router_agent = create_router');
     expect(code).toContain('Hello!');
+    expect(code).toContain('asyncio.run(WeatherBotBot(impls=_impls).run_cli())');
   });
 
   it('generates AgentWrapper class for hooks', () => {

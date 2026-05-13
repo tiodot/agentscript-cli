@@ -1,3 +1,6 @@
 node_modules/
 dist/
 agentscript-src/
+examples/*.py
+__pycache__/
+*_bailian/
