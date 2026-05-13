@@ -1,0 +1,58 @@
+import { PythonWriter } from './python-writer';
+import type { VariableData } from '../ast-utils';
+
+export class StateGenerator {
+  mapType(agentScriptType: string): string {
+    // Handle generic types like list[string], list[object]
+    const listMatch = agentScriptType.match(/^list\[(.+)\]$/);
+    if (listMatch) {
+      const inner = this.mapType(listMatch[1]);
+      return `list[${inner}]`;
+    }
+    switch (agentScriptType) {
+      case 'string': return 'str';
+      case 'number': return 'int';
+      case 'boolean': return 'bool';
+      case 'object': return 'dict';
+      default: return 'Any';
+    }
+  }
+
+  mapDefaultValue(agentScriptType: string, defaultValue: string): string {
+    if (defaultValue && defaultValue !== 'None') return defaultValue;
+    switch (agentScriptType) {
+      case 'string': return '""';
+      case 'number': return '0';
+      case 'boolean': return 'False';
+      case 'object': return '{}';
+      case 'list[object]': return '[]';
+      default: return 'None';
+    }
+  }
+
+  generate(variables: VariableData[]): string {
+    const w = new PythonWriter();
+    w.addImportFrom('typing', 'Any');
+
+    w.writeLine('class StateManager:');
+    w.writeLine('    """Shared state mirroring AgentScript variables."""');
+    w.writeBlankLine();
+
+    w.writeLine('    def __init__(self):');
+    for (const v of variables) {
+      const pyType = this.mapType(v.type);
+      const pyDefault = this.mapDefaultValue(v.type, v.defaultValue);
+      const comment = v.linked ? '  # linked (read-only)' : v.description ? `  # ${v.description}` : '';
+      w.writeLine(`        self.${v.name}: ${pyType} = ${pyDefault}${comment}`);
+    }
+
+    w.writeBlankLine();
+    w.writeLine('    def set(self, name: str, value: Any) -> None:');
+    w.writeLine('        setattr(self, name, value)');
+    w.writeBlankLine();
+    w.writeLine('    def get(self, name: str) -> Any:');
+    w.writeLine('        return getattr(self, name, None)');
+
+    return w.toString();
+  }
+}
