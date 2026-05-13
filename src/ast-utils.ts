@@ -141,16 +141,26 @@ function exprToString(expr: any): string {
   if (expr == null) return '';
   if (typeof expr === 'string') return expr;
   if (typeof expr === 'number' || typeof expr === 'boolean') return String(expr);
-  if (expr.value !== undefined) return strVal(expr);
+
+  // Check kind-specific logic first (before the generic .value check)
+  const kind = expr.__kind ?? expr.constructor?.name;
+
+  // AtIdentifier: @variables, @actions, @outputs, @utils
+  if (kind === 'AtIdentifier') {
+    return `@${expr.name}`;
+  }
 
   // MemberExpression: @variables.x or @actions.Y
-  const kind = expr.__kind ?? expr.constructor?.name;
   if (kind === 'MemberExpression' || kind === 'Identifier') {
-    // Reconstruct the reference string
     if (expr.object && expr.property) {
       return `${exprToString(expr.object)}.${exprToString(expr.property)}`;
     }
     if (expr.name) return expr.name;
+  }
+
+  // SubscriptExpression: active_alerts[0]
+  if (kind === 'SubscriptExpression') {
+    return `${exprToString(expr.object)}[${exprToString(expr.index)}]`;
   }
 
   // Template expression (with parts — TemplateExpression kind)
@@ -177,8 +187,8 @@ function exprToString(expr: any): string {
   // NumberLiteral
   if (kind === 'NumberLiteral') return String(expr.value);
 
-  // StringLiteral
-  if (kind === 'StringLiteral') return expr.value;
+  // StringLiteral — preserve quotes for Python
+  if (kind === 'StringLiteral') return `"${expr.value}"`;
 
   // Template interpolation {!@actions.X}
   if (kind === 'TemplateInterpolation') {
@@ -192,6 +202,9 @@ function exprToString(expr: any): string {
   if (kind === 'ExpressionSequence' && expr.__children) {
     return expr.__children.map(exprToString).join('');
   }
+
+  // Generic fallback: if the node has a .value property, use strVal
+  if (expr.value !== undefined) return strVal(expr);
 
   // Fallback: try __emit or stringify
   return String(expr);

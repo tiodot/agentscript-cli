@@ -68,7 +68,7 @@ describe('extractVariables', () => {
     expect(userCity).toBeDefined();
     expect(userCity?.type).toBe('string');
     expect(userCity?.mutable).toBe(true);
-    expect(userCity?.defaultValue).toBe('');
+    expect(userCity?.defaultValue).toBe('""');
 
     const temperature = variables.find(v => v.name === 'temperature');
     expect(temperature).toBeDefined();

@@ -46,7 +46,7 @@ describe('LogicGenerator', () => {
     };
     const gen = new LogicGenerator();
     const code = gen.generateStatement(stmt);
-    expect(code).toContain('# transition to case_creation');
+    expect(code).toContain('pass  # transition to case_creation');
   });
 
   it('converts @references to Python expressions', () => {

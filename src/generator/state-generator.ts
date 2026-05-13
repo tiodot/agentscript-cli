@@ -19,7 +19,8 @@ export class StateGenerator {
   }
 
   mapDefaultValue(agentScriptType: string, defaultValue: string): string {
-    if (defaultValue && defaultValue !== 'None') return defaultValue;
+    // If the extracted default is a JS object string, use type-based default instead
+    if (defaultValue && defaultValue !== 'None' && !defaultValue.startsWith('[object')) return defaultValue;
     switch (agentScriptType) {
       case 'string': return '""';
       case 'number': return '0';
@@ -39,11 +40,15 @@ export class StateGenerator {
     w.writeBlankLine();
 
     w.writeLine('    def __init__(self):');
-    for (const v of variables) {
-      const pyType = this.mapType(v.type);
-      const pyDefault = this.mapDefaultValue(v.type, v.defaultValue);
-      const comment = v.linked ? '  # linked (read-only)' : v.description ? `  # ${v.description}` : '';
-      w.writeLine(`        self.${v.name}: ${pyType} = ${pyDefault}${comment}`);
+    if (variables.length === 0) {
+      w.writeLine('        pass');
+    } else {
+      for (const v of variables) {
+        const pyType = this.mapType(v.type);
+        const pyDefault = this.mapDefaultValue(v.type, v.defaultValue);
+        const comment = v.linked ? '  # linked (read-only)' : v.description ? `  # ${v.description}` : '';
+        w.writeLine(`        self.${v.name}: ${pyType} = ${pyDefault}${comment}`);
+      }
     }
 
     w.writeBlankLine();

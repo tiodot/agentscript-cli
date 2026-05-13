@@ -117,9 +117,13 @@ export class PipelineGenerator {
     w.setIndent(2);
     if (subagent.beforeReasoning.length > 0) {
       const code = this.logicGen.generateStatements(subagent.beforeReasoning, 2);
-      for (const line of code.trim().split('\n')) {
-        w.writeLine(line.trimStart());
+      // generateStatements already includes proper indentation, write at base indent
+      const savedIndent = w.getIndent();
+      w.setIndent(0);
+      for (const line of code.split('\n')) {
+        if (line) w.writeLine(line);
       }
+      w.setIndent(savedIndent);
     } else {
       w.writeLine('pass');
     }
@@ -130,9 +134,12 @@ export class PipelineGenerator {
     w.setIndent(2);
     if (subagent.afterReasoning.length > 0) {
       const code = this.logicGen.generateStatements(subagent.afterReasoning, 2);
-      for (const line of code.trim().split('\n')) {
-        w.writeLine(line.trimStart());
+      const savedIndent = w.getIndent();
+      w.setIndent(0);
+      for (const line of code.split('\n')) {
+        if (line) w.writeLine(line);
       }
+      w.setIndent(savedIndent);
     } else {
       w.writeLine('pass');
     }

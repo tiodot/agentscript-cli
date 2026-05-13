@@ -26,23 +26,19 @@ export class LogicGenerator {
   }
 
   generateStatements(stmts: LogicStatement[], indent: number = 0): string {
-    const w = new PythonWriter();
-    w.setIndent(indent);
+    const lines: string[] = [];
     for (const stmt of stmts) {
-      const lines = this.generateStatement(stmt, indent);
-      for (const line of lines.split('\n')) {
-        w.writeLine(line.trimStart() || '');
-      }
+      lines.push(this.generateStatement(stmt, indent));
     }
-    return w.toString();
+    return lines.join('\n');
   }
 
   generateStatement(stmt: LogicStatement, baseIndent: number = 0): string {
     switch (stmt.kind) {
       case 'if': return this.genIf(stmt, baseIndent);
       case 'run': return this.genRun(stmt, baseIndent);
-      case 'set': return this.genSet(stmt);
-      case 'transition': return this.genTransition(stmt);
+      case 'set': return this.genSet(stmt, baseIndent);
+      case 'transition': return this.genTransition(stmt, baseIndent);
     }
   }
 
@@ -66,23 +62,23 @@ export class LogicGenerator {
   private genRun(stmt: LogicStatement & { kind: 'run' }, indent: number): string {
     const lines: string[] = [];
     const actionName = this.toolGen.toSnakeCase(stmt.action.replace('@actions.', ''));
-    const withArgs = stmt.withBindings.map(b => `${b.param}=${this.convertRef(b.value)}`).join(', ');
+    const withArgs = stmt.withBindings.map(b => `${b.param}=${this.convertCondition(b.value)}`).join(', ');
     lines.push(`${'    '.repeat(indent)}result = await ${actionName}(${withArgs})`);
     for (const binding of stmt.setBindings) {
       const varName = binding.variable.replace('@variables.', '');
-      lines.push(`${'    '.repeat(indent)}state.set("${varName}", ${this.convertRef(binding.value)})`);
+      lines.push(`${'    '.repeat(indent)}state.set("${varName}", ${this.convertCondition(binding.value)})`);
     }
     return lines.join('\n');
   }
 
-  private genSet(stmt: LogicStatement & { kind: 'set' }): string {
+  private genSet(stmt: LogicStatement & { kind: 'set' }, indent: number): string {
     const varName = stmt.variable.replace('@variables.', '');
     const value = this.convertCondition(stmt.value);
-    return `state.set("${varName}", ${value})`;
+    return `${'    '.repeat(indent)}state.set("${varName}", ${value})`;
   }
 
-  private genTransition(stmt: LogicStatement & { kind: 'transition' }): string {
+  private genTransition(stmt: LogicStatement & { kind: 'transition' }, indent: number): string {
     const target = stmt.target.replace('@topic.', '').replace('@subagent.', '');
-    return `# transition to ${target}`;
+    return `${'    '.repeat(indent)}pass  # transition to ${target}`;
   }
 }
