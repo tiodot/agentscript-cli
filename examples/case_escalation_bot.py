@@ -392,13 +392,22 @@ CRITICAL: Whenever the user provides any of the following values — customer_em
 def create_case_creation(state: StateManager, toolkit: Toolkit) -> ReActAgent:
     """Create the case_creation agent."""
 
-    sys_prompt = f"""
-Thank you for verifying your identity, {state.get("customer_name")}!
-I see you have a {state.get("case_type")} issue. Let me gather some details to create your case.
-Current escalation score: {state.get("escalation_score")}/100
-Priority level: {state.get("case_priority")}
-Please describe your issue in detail. The more specific information you can provide, the better I can assist you.
-CRITICAL: Whenever the user provides any of the following values — case_description — you MUST immediately call _set_variables_case_creation(case_description=<value>) to save them before calling any other tool. Do NOT skip this step."""
+    sys_prompt = f"""You are a support case creation agent.
+Customer: {state.get("customer_name")} | Case type: {state.get("case_type")} | Priority: {state.get("case_priority")}
+
+STEP 1 — Extract case description:
+  The user's message likely already contains a description of their issue. Extract it now.
+  Immediately call _set_variables_case_creation(case_description=<extracted description>).
+  Do NOT ask the user to describe the issue again if they already described it.
+
+STEP 2 — Create the case:
+  After saving case_description, call create_support_case to register the case in the system.
+
+STEP 3 — Calculate escalation:
+  Call calculate_escalation_score to assess whether escalation is needed.
+
+STEP 4 — Inform the customer:
+  Tell the customer their case number and next steps."""
 
     return ReActAgent(
         name="case_creation",
@@ -505,11 +514,36 @@ class AgentBot:
             f"No implementation for '{name}'. Pass via impls={{'{name}': your_fn}}."
         )
 
+    def _rebuild_agent_inner(self, name: str) -> None:
+        """Rebuild a specific agent's inner ReActAgent with current state (refreshes sys_prompt)."""
+        wrapper = self._agents.get(name)
+        if wrapper is None:
+            return
+        toolkit = self._toolkits.get(name)
+        if toolkit is None:
+            return
+        creators = {
+            "customer_verification": create_customer_verification,
+            "case_creation": create_case_creation,
+            "escalation_assessment": create_escalation_assessment,
+            "case_resolution": create_case_resolution,
+        }
+        creator = creators.get(name)
+        if creator:
+            wrapper.agent = creator(self.state, toolkit)
+
     def _build_agents(self):
         toolkit_customer_verification = Toolkit()
         toolkit_case_creation = Toolkit()
         toolkit_escalation_assessment = Toolkit()
         toolkit_case_resolution = Toolkit()
+
+        self._toolkits = {
+            "customer_verification": toolkit_customer_verification,
+            "case_creation": toolkit_case_creation,
+            "escalation_assessment": toolkit_escalation_assessment,
+            "case_resolution": toolkit_case_resolution,
+        }
 
         customer_verification_agent = create_customer_verification(self.state, toolkit_customer_verification)
         case_creation_agent = create_case_creation(self.state, toolkit_case_creation)
@@ -572,7 +606,8 @@ class AgentBot:
 
     async def chat(self, user_message: str) -> str:
         """Send a message and get a response. Maintains conversation state across calls."""
-        msg = Msg(name="user", content=user_message, role="user")
+        original_msg = Msg(name="user", content=user_message, role="user")
+        msg = original_msg
         while True:
             agent = self._agents[self._current_agent_name]
             try:
@@ -582,7 +617,9 @@ class AgentBot:
             if hasattr(agent, "next_agent") and agent.next_agent:
                 self._current_agent_name = agent.next_agent
                 agent.next_agent = None
-                msg = result
+                self._rebuild_agent_inner(self._current_agent_name)
+                # Pass original user message so downstream agents can extract info
+                msg = original_msg
                 continue
             return result.get_text_content() if hasattr(result, "get_text_content") else str(result)
 
@@ -604,5 +641,26 @@ class AgentBot:
 
 
 if __name__ == "__main__":
-    _impls = {"verify_customer_identity": verify_customer_identity_impl, "get_customer_case_history": get_customer_case_history_impl, "create_support_case": create_support_case_impl, "calculate_escalation_score": calculate_escalation_score_impl, "initiate_escalation": initiate_escalation_impl, "notify_customer": notify_customer_impl, "provide_solution": provide_solution_impl, "close_case": close_case_impl}
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from case_escalation_bot_actions import (
+        verify_customer_identity_impl as _verify_customer_identity_impl,
+        get_customer_case_history_impl as _get_customer_case_history_impl,
+        create_support_case_impl as _create_support_case_impl,
+        calculate_escalation_score_impl as _calculate_escalation_score_impl,
+        initiate_escalation_impl as _initiate_escalation_impl,
+        notify_customer_impl as _notify_customer_impl,
+        provide_solution_impl as _provide_solution_impl,
+        close_case_impl as _close_case_impl,
+    )
+    _impls = {
+        "verify_customer_identity": _verify_customer_identity_impl,
+        "get_customer_case_history": _get_customer_case_history_impl,
+        "create_support_case": _create_support_case_impl,
+        "calculate_escalation_score": _calculate_escalation_score_impl,
+        "initiate_escalation": _initiate_escalation_impl,
+        "notify_customer": _notify_customer_impl,
+        "provide_solution": _provide_solution_impl,
+        "close_case": _close_case_impl,
+    }
     asyncio.run(AgentBot(impls=_impls).run_cli())

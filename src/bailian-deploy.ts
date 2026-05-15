@@ -20,7 +20,7 @@ export interface BuildBailianOptions {
   description?: string;
   welcomeMessage?: string;
   version?: string;
-  mcpCode?: string;
+  enableMcp?: boolean;
   implsPath?: string;
 }
 
@@ -46,9 +46,14 @@ function toPackageName(name: string): string {
  * Generate a complete Bailian high-code project in the output directory.
  */
 export function generateBailianProject(options: BuildBailianOptions): void {
-  const { coreCode, outputDir, appName, description, welcomeMessage, version, mcpCode, implsPath } = options;
+  const { coreCode, outputDir, appName, description, welcomeMessage, version, enableMcp, implsPath } = options;
   const pkgName = toPackageName(appName);
   const pkgVersion = version || `0.1.0+${Date.now()}`;
+
+  // Clean output directory first to avoid stale files from previous builds
+  if (existsSync(outputDir)) {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
 
   // Create directory structure
   const deployStarterDir = join(outputDir, "deploy_starter");
@@ -67,19 +72,19 @@ export function generateBailianProject(options: BuildBailianOptions): void {
   writeFileSync(join(deployStarterDir, "__init__.py"), "", "utf-8");
 
   // Write main.py (Bailian entry point)
-  const mainPy = generateMainPy(appName, welcomeMessage, description, pkgName, mcpCode, !!implsPath);
+  const mainPy = generateMainPy(appName, welcomeMessage, description, !!implsPath);
   writeFileSync(join(deployStarterDir, "main.py"), mainPy, "utf-8");
 
   // Write requirements.txt
-  const requirementsTxt = generateRequirementsTxt(mcpCode);
+  const requirementsTxt = generateRequirementsTxt(enableMcp);
   writeFileSync(join(outputDir, "requirements.txt"), requirementsTxt, "utf-8");
 
   // Write pyproject.toml
-  const pyprojectToml = generatePyProjectToml(pkgName, pkgVersion, mcpCode);
+  const pyprojectToml = generatePyProjectToml(pkgName, pkgVersion, enableMcp);
   writeFileSync(join(outputDir, "pyproject.toml"), pyprojectToml, "utf-8");
 }
 
-function generateMainPy(appName: string, welcomeMessage?: string, description?: string, _pkgName?: string, mcpCode?: string, hasImpls?: boolean): string {
+function generateMainPy(appName: string, welcomeMessage?: string, description?: string, hasImpls?: boolean): string {
   const agentName = appName || "Agent";
   const welcome = welcomeMessage || "Hello! How can I help you?";
 
@@ -88,72 +93,8 @@ function generateMainPy(appName: string, welcomeMessage?: string, description?: 
     : "";
 
   const botInit = hasImpls
-    ? `AgentBot(impls={k: v for k, v in globals().items() if k.endswith("_impl") and callable(v)})`
+    ? `AgentBot(impls={k.removesuffix("_impl"): v for k, v in globals().items() if k.endswith("_impl") and callable(v)})`
     : `AgentBot()`;
-
-  // If mcpCode is provided, generate a main.py that wires MCP tool overrides
-  const mcpOverrideSection = mcpCode
-    ? `
-from deploy_starter.agent_core import _STUB_TOOLS, _TOOL_OVERRIDES
-from fastmcp import Client
-from fastmcp.client.transports import StreamableHttpTransport
-
-_MCP_CODE = os.environ.get("MCP_CODE", ${JSON.stringify(mcpCode)})
-_MCP_BASE_URL = f"https://dashscope.aliyuncs.com/api/v1/mcps/{_MCP_CODE}/mcp"
-
-async def _mcp_call_async(tool_name: str, arguments: dict) -> dict:
-    """Call a Bailian MCP service tool via fastmcp StreamableHttpTransport."""
-    api_key = os.environ.get("DASHSCOPE_API_KEY", "")
-    if not api_key:
-        return {"error": "DASHSCOPE_API_KEY env var not set"}
-    transport = StreamableHttpTransport(
-        url=_MCP_BASE_URL,
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
-    async with Client(transport=transport) as client:
-        result = await client.call_tool(tool_name, arguments)
-        if result and result.content:
-            text = "\\n".join(
-                block.text for block in result.content if hasattr(block, "text")
-            )
-            try:
-                import json as _json
-                parsed = _json.loads(text)
-                if isinstance(parsed, list):
-                    # MCP returned a JSON array (e.g. SOQL records) — wrap as {"records": [...]}
-                    return {"records": parsed}
-                return parsed
-            except (_json.JSONDecodeError, TypeError):
-                return {"result": text}
-        return {}
-
-
-def _make_mcp_override(tool_name: str):
-    """Create a sync wrapper that calls the Bailian MCP tool."""
-    import asyncio
-    def _impl(**kwargs):
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(
-                        asyncio.run, _mcp_call_async(tool_name, kwargs)
-                    )
-                    return future.result()
-            return loop.run_until_complete(_mcp_call_async(tool_name, kwargs))
-        except RuntimeError:
-            return asyncio.run(_mcp_call_async(tool_name, kwargs))
-    _impl.__name__ = tool_name
-    return _impl
-
-
-# Auto-register MCP overrides for all stub tools
-for _tool_name in _STUB_TOOLS:
-    if _tool_name not in _TOOL_OVERRIDES:
-        _TOOL_OVERRIDES[_tool_name] = _make_mcp_override(_tool_name)
-`
-    : "";
 
   return `"""Bailian high-code application entry point for ${agentName}."""
 import os
@@ -164,8 +105,7 @@ from agentscope.message import Msg
 from agentscope_runtime.engine import AgentApp
 
 from deploy_starter.agent_core import AgentBot
-${implsImport}${mcpOverrideSection}
-
+${implsImport}
 class SessionManager:
     """Manages per-session AgentBot instances for conversation isolation."""
 
@@ -238,25 +178,25 @@ if __name__ == "__main__":
 `;
 }
 
-function generateRequirementsTxt(mcpCode?: string): string {
+function generateRequirementsTxt(enableMcp?: boolean): string {
   const deps = [
     "agentscope-runtime>=1.0.0",
     "agentscope>=1.0.0",
     "pydantic>=2.0",
   ];
-  if (mcpCode) {
+  if (enableMcp) {
     deps.push("fastmcp>=2.0");
   }
   return deps.join("\n") + "\n";
 }
 
-function generatePyProjectToml(pkgName: string, version: string, mcpCode?: string): string {
+function generatePyProjectToml(pkgName: string, version: string, enableMcp?: boolean): string {
   const deps = [
     "    \"agentscope-runtime>=1.0.0\"",
     "    \"agentscope>=1.0.0\"",
     "    \"pydantic>=2.0\"",
   ];
-  if (mcpCode) {
+  if (enableMcp) {
     deps.push("    \"fastmcp>=2.0\"");
   }
   return `[build-system]
@@ -371,7 +311,6 @@ export async function deployToBailian(
   return new Promise((resolve, reject) => {
     const proc = spawn("runtime-fc-deploy", args, {
       stdio: "inherit",
-      shell: true,
     });
 
     proc.on("close", (code) => {

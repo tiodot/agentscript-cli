@@ -75,7 +75,7 @@ program
   .argument('<file>', 'Path to the .agent file')
   .option('--output-dir <dir>', 'Directory for the generated Bailian project')
   .option('--app-id <id>', 'Bailian app ID to update an existing deployment')
-  .option('--mcp-code <code>', 'Bailian MCP service code')
+  .option('--mcp', 'Include fastmcp dependency for Bailian MCP services')
   .option('--build-only', 'Build wheel only, skip deploy')
   .option('--desc <text>', 'Description override')
   .option('--actions <file>', 'Python file with action implementations (async def <action_name>_impl(...))')
@@ -159,7 +159,7 @@ program
         appName,
         description: options.desc ?? config.description,
         welcomeMessage: system.welcomeMessage,
-        mcpCode: options.mcpCode,
+        enableMcp: options.mcp ?? false,
         implsPath,
       });
       console.log(`Generated Bailian project → ${outputDir}/`);

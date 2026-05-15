@@ -98,6 +98,8 @@ class HelloWorldBotBot:
             agent = self._agents[self._current_agent_name]
             try:
                 result = await agent(msg)
+            except NotImplementedError:
+                raise
             except Exception as e:
                 return "Sorry, something went wrong."
             if hasattr(agent, "next_agent") and agent.next_agent:

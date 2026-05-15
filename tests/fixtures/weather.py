@@ -188,7 +188,10 @@ class CurrentWeatherServiceWrapper:
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
         result = await self.agent(msg)
-        await self.after_call(msg, result)
+        try:
+            await self.after_call(msg, result)
+        except NotImplementedError:
+            pass  # unimplemented action stubs — result still returned
         return result
 
     async def before_call(self, msg: Msg) -> None:
@@ -218,7 +221,10 @@ class SevereWeatherAlertsWrapper:
     async def __call__(self, msg: Msg) -> Msg:
         await self.before_call(msg)
         result = await self.agent(msg)
-        await self.after_call(msg, result)
+        try:
+            await self.after_call(msg, result)
+        except NotImplementedError:
+            pass  # unimplemented action stubs — result still returned
         return result
 
     async def before_call(self, msg: Msg) -> None:
@@ -481,6 +487,8 @@ class WeatherProAssistantBot:
             agent = self._agents[self._current_agent_name]
             try:
                 result = await agent(msg)
+            except NotImplementedError:
+                raise
             except Exception as e:
                 return "I apologize, but I'm experiencing technical difficulties retrieving weather data. Please try again in a moment."
             if hasattr(agent, "next_agent") and agent.next_agent:
