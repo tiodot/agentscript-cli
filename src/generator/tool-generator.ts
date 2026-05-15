@@ -18,9 +18,17 @@ export class ToolGenerator {
     }
     switch (agentScriptType) {
       case 'string': return 'str';
-      case 'number': return 'int';
+      case 'number': return 'float';
+      case 'integer': return 'int';
+      case 'long': return 'int';
       case 'boolean': return 'bool';
       case 'object': return 'dict';
+      case 'currency': return 'float';
+      case 'date': return 'str';
+      case 'datetime': return 'str';
+      case 'time': return 'str';
+      case 'timestamp': return 'str';
+      case 'id': return 'str';
       default: return 'Any';
     }
   }

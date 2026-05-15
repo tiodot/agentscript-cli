@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import json
 import os
 
@@ -28,7 +27,7 @@ class StateManager:
         self.case_description: str = ""  # Detailed description of the issue
         self.case_number: str = ""  # Generated case number
         self.case_resolved: bool = False  # Whether case has been resolved
-        self.escalation_score: int = 0  # Escalation score based on issue complexity (0-100)
+        self.escalation_score: float = 0  # Escalation score based on issue complexity (0-100)
         self.escalation_required: bool = False  # Whether case requires escalation
         self.escalation_tier: str = ""  # Escalation tier: l2_support, manager, senior_manager
 
@@ -102,7 +101,7 @@ async def create_support_case(customer_id: str, case_type: str, case_description
     result = await create_support_case_impl(customer_id=customer_id, case_type=case_type, case_description=case_description, priority=priority)
     return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
 
-async def calculate_escalation_score_impl(case_type: str, customer_tier: str, previous_escalations: int, case_complexity: str) -> dict:
+async def calculate_escalation_score_impl(case_type: str, customer_tier: str, previous_escalations: float, case_complexity: str) -> dict:
     """Calculates escalation score based on case details and customer history
 
     Args:
@@ -119,7 +118,7 @@ async def calculate_escalation_score_impl(case_type: str, customer_tier: str, pr
 
     raise NotImplementedError("Action target: flow://CalculateEscalationScore")
 
-async def calculate_escalation_score(case_type: str, customer_tier: str, previous_escalations: int, case_complexity: str) -> ToolResponse:
+async def calculate_escalation_score(case_type: str, customer_tier: str, previous_escalations: float, case_complexity: str) -> ToolResponse:
     """Calculates escalation score based on case details and customer history"""
 
     result = await calculate_escalation_score_impl(case_type=case_type, customer_tier=customer_tier, previous_escalations=previous_escalations, case_complexity=case_complexity)
@@ -479,6 +478,7 @@ class AgentBot:
         self._impls = impls or {}
         self._current_agent_name = "customer_verification"
         self._agents: dict = {}
+        self._pending_transition: str | None = None
         self._build_agents()
 
     async def _resolve_impl(self, name: str, **kwargs):
@@ -499,26 +499,162 @@ class AgentBot:
         escalation_assessment_agent = create_escalation_assessment(self.state, toolkit_escalation_assessment)
         case_resolution_agent = create_case_resolution(self.state, toolkit_case_resolution)
 
-        import functools
-        def _make_tool(bot_self, name, fn):
-            @functools.wraps(fn)
-            async def _tool(*args, **kwargs):
-                result = await bot_self._resolve_impl(name, **kwargs)
-                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
-            return _tool
+        _state_customer_verification = self.state
+        async def verify_customer() -> ToolResponse:
+            """Verifies customer identity using email address and security questions"""
+            result = await self._resolve_impl(
+                "verify_customer_identity",
+                email=_state_customer_verification.get("customer_email"),
+                security_question_answer="",
+            )
+            _state_customer_verification.set("customer_verified", result["customer_found"])
+            _state_customer_verification.set("customer_name", result["customer_name"])
+            _state_customer_verification.set("customer_id", result["customer_id"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_customer_verification.register_tool_function(verify_customer)
 
-        toolkit_customer_verification.register_tool_function(_make_tool(self, "verify_customer_identity", verify_customer_identity))
-        toolkit_customer_verification.register_tool_function(_make_tool(self, "get_customer_case_history", get_customer_case_history))
-        toolkit_case_creation.register_tool_function(_make_tool(self, "create_support_case", create_support_case))
-        toolkit_case_creation.register_tool_function(_make_tool(self, "calculate_escalation_score", calculate_escalation_score))
-        toolkit_escalation_assessment.register_tool_function(_make_tool(self, "initiate_escalation", initiate_escalation))
-        toolkit_escalation_assessment.register_tool_function(_make_tool(self, "notify_customer", notify_customer))
-        toolkit_case_resolution.register_tool_function(_make_tool(self, "provide_solution", provide_solution))
-        toolkit_case_resolution.register_tool_function(_make_tool(self, "close_case", close_case))
+        _state_customer_verification = self.state
+        async def get_case_history() -> ToolResponse:
+            """Retrieves customer's previous case history for context"""
+            result = await self._resolve_impl(
+                "get_customer_case_history",
+                customer_id=_state_customer_verification.get("customer_id"),
+            )
+            _state_customer_verification.set("escalation_score", result["previous_cases"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_customer_verification.register_tool_function(get_case_history)
+
+        _state_case_creation = self.state
+        async def create_case() -> ToolResponse:
+            """Creates a new support case in the system"""
+            result = await self._resolve_impl(
+                "create_support_case",
+                customer_id=_state_case_creation.get("customer_id"),
+                case_type=_state_case_creation.get("case_type"),
+                case_description=_state_case_creation.get("case_description"),
+                priority=_state_case_creation.get("case_priority"),
+            )
+            _state_case_creation.set("case_number", result["case_number"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_case_creation.register_tool_function(create_case)
+
+        _state_case_creation = self.state
+        async def calculate_escalation() -> ToolResponse:
+            """Calculates escalation score based on case details and customer history"""
+            result = await self._resolve_impl(
+                "calculate_escalation_score",
+                case_type=_state_case_creation.get("case_type"),
+                customer_tier="standard",
+                previous_escalations=1,
+                case_complexity="medium",
+            )
+            _state_case_creation.set("escalation_score", result["escalation_score"])
+            _state_case_creation.set("escalation_tier", result["recommended_tier"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_case_creation.register_tool_function(calculate_escalation)
+
+        _state_escalation_assessment = self.state
+        async def escalate_case() -> ToolResponse:
+            """Initiates escalation to appropriate support tier"""
+            result = await self._resolve_impl(
+                "initiate_escalation",
+                case_number=_state_escalation_assessment.get("case_number"),
+                escalation_tier=_state_escalation_assessment.get("escalation_tier"),
+                escalation_reason="Complex issue requiring specialized expertise",
+                customer_id=_state_escalation_assessment.get("customer_id"),
+            )
+            _state_escalation_assessment.set("escalation_required", True)
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_escalation_assessment.register_tool_function(escalate_case)
+
+        _state_escalation_assessment = self.state
+        async def send_escalation_notification() -> ToolResponse:
+            """Notifies customer about escalation and next steps"""
+            result = await self._resolve_impl(
+                "notify_customer",
+                customer_id=_state_escalation_assessment.get("customer_id"),
+                case_number=_state_escalation_assessment.get("case_number"),
+                escalation_details="Your case has been escalated to " + _state_escalation_assessment.get("escalation_tier"),
+            )
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_escalation_assessment.register_tool_function(send_escalation_notification)
+
+        _state_case_resolution = self.state
+        async def offer_solution() -> ToolResponse:
+            """Provides solution recommendation based on case type"""
+            result = await self._resolve_impl(
+                "provide_solution",
+                case_type=_state_case_resolution.get("case_type"),
+                case_description=_state_case_resolution.get("case_description"),
+                customer_tier="standard",
+            )
+            _state_case_resolution.set("case_resolved", result["resolution_successful"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_case_resolution.register_tool_function(offer_solution)
+
+        _state_case_resolution = self.state
+        async def close_resolved_case() -> ToolResponse:
+            """Closes resolved case and gathers customer satisfaction feedback"""
+            result = await self._resolve_impl(
+                "close_case",
+                case_number=_state_case_resolution.get("case_number"),
+                resolution_summary="Issue resolved through direct support",
+                customer_satisfied=True,
+            )
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_case_resolution.register_tool_function(close_resolved_case)
+
+        _bot_ref_customer_verification_create_case = self
+        async def create_case() -> ToolResponse:
+            """Create a new support case"""
+            _bot_ref_customer_verification_create_case._pending_transition = "case_creation"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_customer_verification.register_tool_function(create_case)
+
+        _bot_ref_case_creation_assess_escalation = self
+        async def assess_escalation() -> ToolResponse:
+            """Assess if escalation is needed"""
+            _bot_ref_case_creation_assess_escalation._pending_transition = "escalation_assessment"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_case_creation.register_tool_function(assess_escalation)
+
+        _bot_ref_case_creation_resolve_case = self
+        async def resolve_case() -> ToolResponse:
+            """Attempt to resolve case directly"""
+            _bot_ref_case_creation_resolve_case._pending_transition = "case_resolution"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_case_creation.register_tool_function(resolve_case)
+
+        _bot_ref_escalation_assessment_help_another = self
+        async def help_another() -> ToolResponse:
+            """Help another customer"""
+            _bot_ref_escalation_assessment_help_another._pending_transition = "customer_verification"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_escalation_assessment.register_tool_function(help_another)
+
+        _bot_ref_case_resolution_escalate_case = self
+        async def escalate_case() -> ToolResponse:
+            """Escalate to higher tier support"""
+            _bot_ref_case_resolution_escalate_case._pending_transition = "escalation_assessment"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_case_resolution.register_tool_function(escalate_case)
+
+        _bot_ref_case_resolution_help_another = self
+        async def help_another() -> ToolResponse:
+            """Help another customer"""
+            _bot_ref_case_resolution_help_another._pending_transition = "customer_verification"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_case_resolution.register_tool_function(help_another)
 
         _captured_state_customer_verification = self.state
         async def _set_variables_customer_verification(customer_email: str | None = None, customer_name: str | None = None, case_type: str | None = None):
-            """Set state variables for the customer_verification agent. Fields: customer_email, customer_name, case_type"""
+            """Set state variables for the customer_verification agent.
+
+            Args:
+                customer_email: Customer's email address for verification
+                customer_name: Customer's name
+                case_type: Type of case: order_issue, product_problem, billing, technical
+            """
             _captured_state = _captured_state_customer_verification
             if customer_email is not None: _captured_state.set("customer_email", customer_email)
             if customer_name is not None: _captured_state.set("customer_name", customer_name)
@@ -527,21 +663,33 @@ class AgentBot:
         toolkit_customer_verification.register_tool_function(_set_variables_customer_verification)
         _captured_state_case_creation = self.state
         async def _set_variables_case_creation(case_description: str | None = None):
-            """Set state variables for the case_creation agent. Fields: case_description"""
+            """Set state variables for the case_creation agent.
+
+            Args:
+                case_description: Detailed description of the issue
+            """
             _captured_state = _captured_state_case_creation
             if case_description is not None: _captured_state.set("case_description", case_description)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
         toolkit_case_creation.register_tool_function(_set_variables_case_creation)
         _captured_state_escalation_assessment = self.state
         async def _set_variables_escalation_assessment(case_description: str | None = None):
-            """Set state variables for the escalation_assessment agent. Fields: case_description"""
+            """Set state variables for the escalation_assessment agent.
+
+            Args:
+                case_description: Detailed description of the issue
+            """
             _captured_state = _captured_state_escalation_assessment
             if case_description is not None: _captured_state.set("case_description", case_description)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
         toolkit_escalation_assessment.register_tool_function(_set_variables_escalation_assessment)
         _captured_state_case_resolution = self.state
         async def _set_variables_case_resolution(case_description: str | None = None):
-            """Set state variables for the case_resolution agent. Fields: case_description"""
+            """Set state variables for the case_resolution agent.
+
+            Args:
+                case_description: Detailed description of the issue
+            """
             _captured_state = _captured_state_case_resolution
             if case_description is not None: _captured_state.set("case_description", case_description)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
@@ -564,6 +712,11 @@ class AgentBot:
                 raise
             except Exception as e:
                 return "I apologize, but I'm experiencing technical difficulties. Please try again or contact us directly at support@company.com."
+            if self._pending_transition:
+                self._current_agent_name = self._pending_transition
+                self._pending_transition = None
+                msg = result
+                continue
             if hasattr(agent, "next_agent") and agent.next_agent:
                 self._current_agent_name = agent.next_agent
                 agent.next_agent = None
@@ -575,6 +728,7 @@ class AgentBot:
         """Reset state and restart from the beginning (new session)."""
         self.state = StateManager()
         self._current_agent_name = "customer_verification"
+        self._pending_transition = None
         self._build_agents()
 
     async def run_cli(self):

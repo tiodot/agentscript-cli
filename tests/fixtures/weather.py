@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import json
 import os
 
@@ -22,15 +21,15 @@ class StateManager:
         self.user_city: str = ""  # User's requested city for weather information
         self.user_country: str = ""  # User's requested country for weather information
         self.location_coordinates: dict = {}  # Latitude and longitude coordinates for the location
-        self.temperature: int = 0  # Current temperature in Celsius
-        self.temperature_fahrenheit: int = 32  # Current temperature in Fahrenheit
+        self.temperature: float = 0  # Current temperature in Celsius
+        self.temperature_fahrenheit: float = 32  # Current temperature in Fahrenheit
         self.conditions: str = ""  # Current weather conditions description
-        self.humidity: int = 0  # Current humidity percentage
-        self.wind_speed: int = 0  # Current wind speed in km/h
+        self.humidity: float = 0  # Current humidity percentage
+        self.wind_speed: float = 0  # Current wind speed in km/h
         self.wind_direction: str = ""  # Wind direction (N, NE, E, SE, S, SW, W, NW)
-        self.pressure: int = 0  # Atmospheric pressure in hPa
-        self.visibility_km: int = 0  # Visibility in kilometers
-        self.uv_index: int = 0  # UV index value
+        self.pressure: float = 0  # Atmospheric pressure in hPa
+        self.visibility_km: float = 0  # Visibility in kilometers
+        self.uv_index: float = 0  # UV index value
         self.forecast_data: list[dict] = []  # Multi-day weather forecast data
         self.hourly_forecast: list[dict] = []  # 24-hour hourly forecast data
         self.severe_weather_alert: bool = False  # Whether there are active severe weather alerts
@@ -132,7 +131,7 @@ async def get_safety_guidelines(hazard_type: str, severity_level: str) -> ToolRe
     result = await get_safety_guidelines_impl(hazard_type=hazard_type, severity_level=severity_level)
     return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
 
-async def get_weather_forecast_impl(city: str, country: str, forecast_days: int | None = None, include_hourly: bool | None = None) -> dict:
+async def get_weather_forecast_impl(city: str, country: str, forecast_days: float | None = None, include_hourly: bool | None = None) -> dict:
     """Retrieves detailed weather forecast data for specified location and timeframe
 
     Args:
@@ -149,7 +148,7 @@ async def get_weather_forecast_impl(city: str, country: str, forecast_days: int 
 
     raise NotImplementedError("Action target: flow://300WX000003WeatherForecastAPI")
 
-async def get_weather_forecast(city: str, country: str, forecast_days: int | None = None, include_hourly: bool | None = None) -> ToolResponse:
+async def get_weather_forecast(city: str, country: str, forecast_days: float | None = None, include_hourly: bool | None = None) -> ToolResponse:
     """Retrieves detailed weather forecast data for specified location and timeframe"""
 
     result = await get_weather_forecast_impl(city=city, country=country, forecast_days=forecast_days, include_hourly=include_hourly)
@@ -423,6 +422,7 @@ class WeatherProAssistantBot:
         self._impls = impls or {}
         self._current_agent_name = "weather_service_router"
         self._agents: dict = {}
+        self._pending_transition: str | None = None
         self._build_agents()
 
     async def _resolve_impl(self, name: str, **kwargs):
@@ -445,24 +445,184 @@ class WeatherProAssistantBot:
         forecast_service_agent = create_forecast_service(self.state, toolkit_forecast_service)
         weather_preferences_agent = create_weather_preferences(self.state, toolkit_weather_preferences)
 
-        import functools
-        def _make_tool(bot_self, name, fn):
-            @functools.wraps(fn)
-            async def _tool(*args, **kwargs):
-                result = await bot_self._resolve_impl(name, **kwargs)
-                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
-            return _tool
+        _state_current_weather_service = self.state
+        async def Get_Current_Weather_Data() -> ToolResponse:
+            """Retrieves comprehensive current weather data for a specified location"""
+            result = await self._resolve_impl(
+                "get_current_weather_data",
+                city=_state_current_weather_service.get("user_city"),
+                country=_state_current_weather_service.get("user_country"),
+            )
+            _state_current_weather_service.set("temperature", result["temperature_celsius"])
+            _state_current_weather_service.set("temperature_fahrenheit", result["temperature_fahrenheit"])
+            _state_current_weather_service.set("conditions", result["conditions"])
+            _state_current_weather_service.set("humidity", result["humidity"])
+            _state_current_weather_service.set("wind_speed", result["wind_speed"])
+            _state_current_weather_service.set("wind_direction", result["wind_direction"])
+            _state_current_weather_service.set("pressure", result["pressure"])
+            _state_current_weather_service.set("visibility_km", result["visibility_km"])
+            _state_current_weather_service.set("uv_index", result["uv_index"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_current_weather_service.register_tool_function(Get_Current_Weather_Data)
 
-        toolkit_current_weather_service.register_tool_function(_make_tool(self, "get_current_weather_data", get_current_weather_data))
-        toolkit_current_weather_service.register_tool_function(_make_tool(self, "geocode_location", geocode_location))
-        toolkit_severe_weather_alerts.register_tool_function(_make_tool(self, "get_weather_alerts_data", get_weather_alerts_data))
-        toolkit_severe_weather_alerts.register_tool_function(_make_tool(self, "get_safety_guidelines", get_safety_guidelines))
-        toolkit_forecast_service.register_tool_function(_make_tool(self, "get_weather_forecast", get_weather_forecast))
-        toolkit_weather_preferences.register_tool_function(_make_tool(self, "update_user_preferences", update_user_preferences))
+        _state_current_weather_service = self.state
+        async def Geocode_Location() -> ToolResponse:
+            """Converts city/country names to precise coordinates for weather lookup"""
+            result = await self._resolve_impl(
+                "geocode_location",
+                location_query=[object Object],
+            )
+            _state_current_weather_service.set("location_coordinates", result["coordinates"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_current_weather_service.register_tool_function(Geocode_Location)
+
+        _state_severe_weather_alerts = self.state
+        async def Get_Weather_Alerts_Data() -> ToolResponse:
+            """Retrieves active weather alerts, warnings, and watches for a specified location"""
+            result = await self._resolve_impl(
+                "get_weather_alerts_data",
+                city=_state_severe_weather_alerts.get("user_city"),
+                country=_state_severe_weather_alerts.get("user_country"),
+            )
+            _state_severe_weather_alerts.set("severe_weather_alert", result["alert_count > 0"])
+            _state_severe_weather_alerts.set("alert_severity", result["highest_severity"])
+            _state_severe_weather_alerts.set("alert_type", result["active_alerts[0].type"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_severe_weather_alerts.register_tool_function(Get_Weather_Alerts_Data)
+
+        _state_severe_weather_alerts = self.state
+        async def Get_Safety_Guidelines() -> ToolResponse:
+            """Retrieves safety guidelines and recommendations for specific weather hazards"""
+            result = await self._resolve_impl(
+                "get_safety_guidelines",
+                hazard_type=_state_severe_weather_alerts.get("alert_type"),
+                severity_level=_state_severe_weather_alerts.get("alert_severity"),
+            )
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_severe_weather_alerts.register_tool_function(Get_Safety_Guidelines)
+
+        _state_forecast_service = self.state
+        async def Get_Weather_Forecast() -> ToolResponse:
+            """Retrieves detailed weather forecast data for specified location and timeframe"""
+            result = await self._resolve_impl(
+                "get_weather_forecast",
+                city=_state_forecast_service.get("user_city"),
+                country=_state_forecast_service.get("user_country"),
+                forecast_days=[object Object],
+                include_hourly=[object Object],
+            )
+            _state_forecast_service.set("forecast_data", result["daily_forecast"])
+            _state_forecast_service.set("hourly_forecast", result["hourly_forecast"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_forecast_service.register_tool_function(Get_Weather_Forecast)
+
+        _state_weather_preferences = self.state
+        async def Update_User_Preferences() -> ToolResponse:
+            """Updates user's weather display and notification preferences"""
+            result = await self._resolve_impl(
+                "update_user_preferences",
+                temperature_units=[object Object],
+                default_location=[object Object],
+                notification_settings=[object Object],
+                display_preferences=[object Object],
+            )
+            _state_weather_preferences.set("preferred_units", result["current_settings.temperature_units"])
+            _state_weather_preferences.set("notification_preferences", result["current_settings.notifications"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_weather_preferences.register_tool_function(Update_User_Preferences)
+
+        _bot_ref_weather_service_router_current_weather = self
+        async def current_weather() -> ToolResponse:
+            """Route to current weather service when users ask for current conditions, temperature, or immediate weather status."""
+            _bot_ref_weather_service_router_current_weather._pending_transition = "current_weather_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_service_router.register_tool_function(current_weather)
+
+        _bot_ref_weather_service_router_weather_forecast = self
+        async def weather_forecast() -> ToolResponse:
+            """Route to forecast service when users ask for future weather predictions, multi-day forecasts, or planning information."""
+            _bot_ref_weather_service_router_weather_forecast._pending_transition = "forecast_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_service_router.register_tool_function(weather_forecast)
+
+        _bot_ref_weather_service_router_emergency_alerts = self
+        async def emergency_alerts() -> ToolResponse:
+            """Route to severe weather alerts when users mention storms, warnings, emergencies, or safety concerns."""
+            _bot_ref_weather_service_router_emergency_alerts._pending_transition = "severe_weather_alerts"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_service_router.register_tool_function(emergency_alerts)
+
+        _bot_ref_weather_service_router_user_settings = self
+        async def user_settings() -> ToolResponse:
+            """Route to preferences when users want to set temperature units, location defaults, or notification settings."""
+            _bot_ref_weather_service_router_user_settings._pending_transition = "weather_preferences"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_service_router.register_tool_function(user_settings)
+
+        _bot_ref_current_weather_service_get_forecast = self
+        async def get_forecast() -> ToolResponse:
+            """Get detailed weather forecast for the current location."""
+            _bot_ref_current_weather_service_get_forecast._pending_transition = "forecast_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_current_weather_service.register_tool_function(get_forecast)
+
+        _bot_ref_current_weather_service_check_alerts = self
+        async def check_alerts() -> ToolResponse:
+            """Check for severe weather alerts in the area."""
+            _bot_ref_current_weather_service_check_alerts._pending_transition = "severe_weather_alerts"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_current_weather_service.register_tool_function(check_alerts)
+
+        _bot_ref_severe_weather_alerts_check_current_conditions = self
+        async def check_current_conditions() -> ToolResponse:
+            """Check current weather conditions after reviewing alerts."""
+            _bot_ref_severe_weather_alerts_check_current_conditions._pending_transition = "current_weather_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_severe_weather_alerts.register_tool_function(check_current_conditions)
+
+        _bot_ref_severe_weather_alerts_extended_forecast = self
+        async def extended_forecast() -> ToolResponse:
+            """Get extended forecast to track severe weather progression."""
+            _bot_ref_severe_weather_alerts_extended_forecast._pending_transition = "forecast_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_severe_weather_alerts.register_tool_function(extended_forecast)
+
+        _bot_ref_forecast_service_current_conditions = self
+        async def current_conditions() -> ToolResponse:
+            """Check current weather conditions alongside the forecast."""
+            _bot_ref_forecast_service_current_conditions._pending_transition = "current_weather_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_forecast_service.register_tool_function(current_conditions)
+
+        _bot_ref_forecast_service_alert_monitoring = self
+        async def alert_monitoring() -> ToolResponse:
+            """Monitor for any severe weather in the forecast period."""
+            _bot_ref_forecast_service_alert_monitoring._pending_transition = "severe_weather_alerts"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_forecast_service.register_tool_function(alert_monitoring)
+
+        _bot_ref_weather_preferences_get_weather = self
+        async def get_weather() -> ToolResponse:
+            """Get weather information with updated preferences."""
+            _bot_ref_weather_preferences_get_weather._pending_transition = "current_weather_service"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_preferences.register_tool_function(get_weather)
+
+        _bot_ref_weather_preferences_main_menu = self
+        async def main_menu() -> ToolResponse:
+            """Return to main weather service menu."""
+            _bot_ref_weather_preferences_main_menu._pending_transition = "weather_service_router"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_weather_preferences.register_tool_function(main_menu)
 
         _captured_state_current_weather_service = self.state
         async def _set_variables_current_weather_service(user_city: str | None = None, user_country: str | None = None):
-            """Set state variables for the current_weather_service agent. Fields: user_city, user_country"""
+            """Set state variables for the current_weather_service agent.
+
+            Args:
+                user_city: User's requested city for weather information
+                user_country: User's requested country for weather information
+            """
             _captured_state = _captured_state_current_weather_service
             if user_city is not None: _captured_state.set("user_city", user_city)
             if user_country is not None: _captured_state.set("user_country", user_country)
@@ -470,7 +630,11 @@ class WeatherProAssistantBot:
         toolkit_current_weather_service.register_tool_function(_set_variables_current_weather_service)
         _captured_state_severe_weather_alerts = self.state
         async def _set_variables_severe_weather_alerts(notification_preferences: str | None = None):
-            """Set state variables for the severe_weather_alerts agent. Fields: notification_preferences"""
+            """Set state variables for the severe_weather_alerts agent.
+
+            Args:
+                notification_preferences: User's weather notification preferences
+            """
             _captured_state = _captured_state_severe_weather_alerts
             if notification_preferences is not None: _captured_state.set("notification_preferences", notification_preferences)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
@@ -491,6 +655,11 @@ class WeatherProAssistantBot:
                 raise
             except Exception as e:
                 return "I apologize, but I'm experiencing technical difficulties retrieving weather data. Please try again in a moment."
+            if self._pending_transition:
+                self._current_agent_name = self._pending_transition
+                self._pending_transition = None
+                msg = result
+                continue
             if hasattr(agent, "next_agent") and agent.next_agent:
                 self._current_agent_name = agent.next_agent
                 agent.next_agent = None
@@ -502,6 +671,7 @@ class WeatherProAssistantBot:
         """Reset state and restart from the beginning (new session)."""
         self.state = StateManager()
         self._current_agent_name = "weather_service_router"
+        self._pending_transition = None
         self._build_agents()
 
     async def run_cli(self):

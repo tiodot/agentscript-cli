@@ -40,7 +40,7 @@ export class SplitGenerator {
     files['agents.py'] = agentCode;
 
     // pipeline.py
-    files['pipeline.py'] = this.pipelineGen.generateMain(config, system, subagents);
+    files['pipeline.py'] = this.pipelineGen.generateMain(config, system, subagents, variables);
 
     // main.py
     files['main.py'] = `from ${pkgName}.pipeline import main\n\nif __name__ == "__main__":\n    import asyncio\n    asyncio.run(main())\n`;

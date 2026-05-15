@@ -11,9 +11,17 @@ export class StateGenerator {
     }
     switch (agentScriptType) {
       case 'string': return 'str';
-      case 'number': return 'int';
+      case 'number': return 'float';      // IEEE 754 double per spec
+      case 'integer': return 'int';
+      case 'long': return 'int';
       case 'boolean': return 'bool';
       case 'object': return 'dict';
+      case 'currency': return 'float';
+      case 'date': return 'str';          // YYYY-MM-DD string
+      case 'datetime': return 'str';
+      case 'time': return 'str';
+      case 'timestamp': return 'str';
+      case 'id': return 'str';            // Salesforce record ID
       default: return 'Any';
     }
   }
@@ -23,7 +31,9 @@ export class StateGenerator {
     if (defaultValue && defaultValue !== 'None' && !defaultValue.startsWith('[object')) return defaultValue;
     switch (agentScriptType) {
       case 'string': return '""';
-      case 'number': return '0';
+      case 'number': return '0.0';
+      case 'integer': return '0';
+      case 'long': return '0';
       case 'boolean': return 'False';
       case 'object': return '{}';
       case 'list[object]': return '[]';

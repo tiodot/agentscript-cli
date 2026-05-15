@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import json
 import os
 
@@ -65,6 +64,7 @@ class HelloWorldBotBot:
         self._impls = impls or {}
         self._current_agent_name = "hello_world"
         self._agents: dict = {}
+        self._pending_transition: str | None = None
         self._build_agents()
 
     async def _resolve_impl(self, name: str, **kwargs):
@@ -78,15 +78,6 @@ class HelloWorldBotBot:
         toolkit_hello_world = Toolkit()
 
         hello_world_agent = create_hello_world(self.state, toolkit_hello_world)
-
-        import functools
-        def _make_tool(bot_self, name, fn):
-            @functools.wraps(fn)
-            async def _tool(*args, **kwargs):
-                result = await bot_self._resolve_impl(name, **kwargs)
-                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
-            return _tool
-
 
 
         self._agents = {"hello_world": hello_world_agent}
@@ -102,6 +93,11 @@ class HelloWorldBotBot:
                 raise
             except Exception as e:
                 return "Sorry, something went wrong."
+            if self._pending_transition:
+                self._current_agent_name = self._pending_transition
+                self._pending_transition = None
+                msg = result
+                continue
             if hasattr(agent, "next_agent") and agent.next_agent:
                 self._current_agent_name = agent.next_agent
                 agent.next_agent = None
@@ -113,6 +109,7 @@ class HelloWorldBotBot:
         """Reset state and restart from the beginning (new session)."""
         self.state = StateManager()
         self._current_agent_name = "hello_world"
+        self._pending_transition = None
         self._build_agents()
 
     async def run_cli(self):

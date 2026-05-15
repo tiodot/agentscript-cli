@@ -55,7 +55,7 @@ export class CodeGenerator {
     }
 
     // Main + pipeline
-    sections.push(this.pipelineGen.generateMainSection(config, system, subagents));
+    sections.push(this.pipelineGen.generateMainSection(config, system, subagents, variables));
 
     // Collect all imports into a single master writer
     const masterWriter = new PythonWriter();

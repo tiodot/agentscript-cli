@@ -55,7 +55,7 @@ describe('ToolGenerator', () => {
   it('maps type hints', () => {
     const gen = new ToolGenerator();
     expect(gen.mapParamType('string')).toBe('str');
-    expect(gen.mapParamType('number')).toBe('int');
+    expect(gen.mapParamType('number')).toBe('float');
     expect(gen.mapParamType('boolean')).toBe('bool');
     expect(gen.mapParamType('object')).toBe('dict');
   });

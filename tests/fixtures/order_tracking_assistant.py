@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import json
 import os
 
@@ -26,7 +25,7 @@ class StateManager:
         self.order_number: str = ""  # Order number provided by customer
         self.order_found: bool = False  # Whether order was successfully found
         self.order_status: str = ""  # Current order status
-        self.order_total: int = 0  # Order total amount
+        self.order_total: float = 0  # Order total amount
         self.tracking_number: str = ""  # Shipping tracking number
         self.delivery_date: str = ""  # Expected delivery date
         self.shipping_address: str = ""  # Shipping address
@@ -376,6 +375,7 @@ class AgentBot:
         self._impls = impls or {}
         self._current_agent_name = "order_locator"
         self._agents: dict = {}
+        self._pending_transition: str | None = None
         self._build_agents()
 
     async def _resolve_impl(self, name: str, **kwargs):
@@ -394,24 +394,121 @@ class AgentBot:
         order_details_agent = create_order_details(self.state, toolkit_order_details)
         issue_resolver_agent = create_issue_resolver(self.state, toolkit_issue_resolver)
 
-        import functools
-        def _make_tool(bot_self, name, fn):
-            @functools.wraps(fn)
-            async def _tool(*args, **kwargs):
-                result = await bot_self._resolve_impl(name, **kwargs)
-                return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
-            return _tool
+        _state_order_locator = self.state
+        async def lookup_customer() -> ToolResponse:
+            """Retrieves customer information using email address"""
+            result = await self._resolve_impl(
+                "get_customer_info",
+                email=_state_order_locator.get("customer_email"),
+            )
+            _state_order_locator.set("customer_verified", result["customer_found"])
+            _state_order_locator.set("customer_name", result["customer_name"])
+            _state_order_locator.set("customer_id", result["customer_id"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_order_locator.register_tool_function(lookup_customer)
 
-        toolkit_order_locator.register_tool_function(_make_tool(self, "get_customer_info", get_customer_info))
-        toolkit_order_locator.register_tool_function(_make_tool(self, "find_order_by_number", find_order_by_number))
-        toolkit_order_details.register_tool_function(_make_tool(self, "get_order_details", get_order_details))
-        toolkit_order_details.register_tool_function(_make_tool(self, "get_tracking_updates", get_tracking_updates))
-        toolkit_issue_resolver.register_tool_function(_make_tool(self, "process_return_request", process_return_request))
-        toolkit_issue_resolver.register_tool_function(_make_tool(self, "report_shipping_issue", report_shipping_issue))
+        _state_order_locator = self.state
+        async def find_order() -> ToolResponse:
+            """Locates order using order number"""
+            result = await self._resolve_impl(
+                "find_order_by_number",
+                order_number=_state_order_locator.get("order_number"),
+                customer_id=_state_order_locator.get("customer_id"),
+            )
+            _state_order_locator.set("order_found", result["order_found"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_order_locator.register_tool_function(find_order)
+
+        _state_order_details = self.state
+        async def load_order_details() -> ToolResponse:
+            """Retrieves comprehensive order information"""
+            result = await self._resolve_impl(
+                "get_order_details",
+                order_number=_state_order_details.get("order_number"),
+                customer_id=_state_order_details.get("customer_id"),
+            )
+            _state_order_details.set("order_status", result["order_status"])
+            _state_order_details.set("tracking_number", result["tracking_number"])
+            _state_order_details.set("delivery_date", result["delivery_date"])
+            _state_order_details.set("order_total", result["order_total"])
+            _state_order_details.set("shipping_address", result["shipping_address"])
+            _state_order_details.set("return_eligible", result["return_eligible"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_order_details.register_tool_function(load_order_details)
+
+        _state_order_details = self.state
+        async def get_live_tracking() -> ToolResponse:
+            """Gets real-time tracking updates from shipping carrier"""
+            result = await self._resolve_impl(
+                "get_tracking_updates",
+                tracking_number=_state_order_details.get("tracking_number"),
+            )
+            _state_order_details.set("delivery_date", result["updated_delivery_date"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_order_details.register_tool_function(get_live_tracking)
+
+        _state_issue_resolver = self.state
+        async def initiate_return() -> ToolResponse:
+            """Initiates return process for eligible orders"""
+            result = await self._resolve_impl(
+                "process_return_request",
+                order_number=_state_issue_resolver.get("order_number"),
+                return_reason=_state_issue_resolver.get("issue_type"),
+                customer_id=_state_issue_resolver.get("customer_id"),
+            )
+            _state_issue_resolver.set("return_eligible", result["return_authorized"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_issue_resolver.register_tool_function(initiate_return)
+
+        _state_issue_resolver = self.state
+        async def report_issue() -> ToolResponse:
+            """Reports shipping problem to carrier and customer service"""
+            result = await self._resolve_impl(
+                "report_shipping_issue",
+                tracking_number=_state_issue_resolver.get("tracking_number"),
+                issue_description=_state_issue_resolver.get("issue_type"),
+                customer_id=_state_issue_resolver.get("customer_id"),
+            )
+            _state_issue_resolver.set("case_number", result["case_number"])
+            return ToolResponse(content=[TextBlock(type="text", text=json.dumps(result))])
+        toolkit_issue_resolver.register_tool_function(report_issue)
+
+        _bot_ref_order_locator_show_order_details = self
+        async def show_order_details() -> ToolResponse:
+            """Show detailed order information"""
+            _bot_ref_order_locator_show_order_details._pending_transition = "order_details"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_order_locator.register_tool_function(show_order_details)
+
+        _bot_ref_order_details_handle_issue = self
+        async def handle_issue() -> ToolResponse:
+            """Handle shipping issues or returns"""
+            _bot_ref_order_details_handle_issue._pending_transition = "issue_resolver"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_order_details.register_tool_function(handle_issue)
+
+        _bot_ref_order_details_search_another = self
+        async def search_another() -> ToolResponse:
+            """Search for another order"""
+            _bot_ref_order_details_search_another._pending_transition = "order_locator"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_order_details.register_tool_function(search_another)
+
+        _bot_ref_issue_resolver_back_to_order = self
+        async def back_to_order() -> ToolResponse:
+            """Return to order details"""
+            _bot_ref_issue_resolver_back_to_order._pending_transition = "order_details"
+            return ToolResponse(content=[TextBlock(type="text", text='{"transitioning": true}')])
+        toolkit_issue_resolver.register_tool_function(back_to_order)
 
         _captured_state_order_locator = self.state
         async def _set_variables_order_locator(order_number: str | None = None, customer_email: str | None = None):
-            """Set state variables for the order_locator agent. Fields: order_number, customer_email"""
+            """Set state variables for the order_locator agent.
+
+            Args:
+                order_number: Order number provided by customer
+                customer_email: Customer's email address
+            """
             _captured_state = _captured_state_order_locator
             if order_number is not None: _captured_state.set("order_number", order_number)
             if customer_email is not None: _captured_state.set("customer_email", customer_email)
@@ -419,14 +516,22 @@ class AgentBot:
         toolkit_order_locator.register_tool_function(_set_variables_order_locator)
         _captured_state_order_details = self.state
         async def _set_variables_order_details(issue_type: str | None = None):
-            """Set state variables for the order_details agent. Fields: issue_type"""
+            """Set state variables for the order_details agent.
+
+            Args:
+                issue_type: Type of shipping issue reported
+            """
             _captured_state = _captured_state_order_details
             if issue_type is not None: _captured_state.set("issue_type", issue_type)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
         toolkit_order_details.register_tool_function(_set_variables_order_details)
         _captured_state_issue_resolver = self.state
         async def _set_variables_issue_resolver(issue_type: str | None = None):
-            """Set state variables for the issue_resolver agent. Fields: issue_type"""
+            """Set state variables for the issue_resolver agent.
+
+            Args:
+                issue_type: Type of shipping issue reported
+            """
             _captured_state = _captured_state_issue_resolver
             if issue_type is not None: _captured_state.set("issue_type", issue_type)
             return ToolResponse(content=[TextBlock(type="text", text='{"ok": true}')])
@@ -448,6 +553,11 @@ class AgentBot:
                 raise
             except Exception as e:
                 return "I'm having trouble accessing the order system right now. Please try again in a moment or contact customer service directly."
+            if self._pending_transition:
+                self._current_agent_name = self._pending_transition
+                self._pending_transition = None
+                msg = result
+                continue
             if hasattr(agent, "next_agent") and agent.next_agent:
                 self._current_agent_name = agent.next_agent
                 agent.next_agent = None
@@ -459,6 +569,7 @@ class AgentBot:
         """Reset state and restart from the beginning (new session)."""
         self.state = StateManager()
         self._current_agent_name = "order_locator"
+        self._pending_transition = None
         self._build_agents()
 
     async def run_cli(self):

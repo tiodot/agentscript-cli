@@ -71,6 +71,8 @@ export interface ReasoningActionData {
   reference: string;
   withBindings: { param: string; value: string }[];
   setBindings: { variable: string; value: string }[];
+  availableWhen?: string;
+  transitionTarget?: string;  // For @utils.transition: the @topic.X / @subagent.X target
 }
 
 export type LogicStatement =
@@ -393,9 +395,11 @@ function extractReasoningAction(name: string, block: any): ReasoningActionData {
     reference = exprToString(block?.reference ?? block?.__reference);
   }
 
-  // with / set bindings: nodes are wrapped in StatementChild — unwrap first
+  // with / set bindings + available_when + transition target: nodes are wrapped in StatementChild — unwrap first
   const withBindings: { param: string; value: string }[] = [];
   const setBindings: { variable: string; value: string }[] = [];
+  let availableWhen: string | undefined;
+  let transitionTarget: string | undefined;
 
   if (block?.__children) {
     for (const child of block.__children) {
@@ -408,6 +412,10 @@ function extractReasoningAction(name: string, block: any): ReasoningActionData {
         withBindings.push({ param: inner.param ?? strVal(inner.__param), value: exprToString(inner.value) });
       } else if (innerKind === 'SetClause') {
         setBindings.push({ variable: exprToString(inner.target), value: exprToString(inner.value) });
+      } else if (innerKind === 'AvailableWhen') {
+        availableWhen = exprToString(inner.condition);
+      } else if (innerKind === '_ToClause' || innerKind === 'ToClause') {
+        transitionTarget = exprToString(inner.target);
       }
     }
   }
@@ -424,7 +432,7 @@ function extractReasoningAction(name: string, block: any): ReasoningActionData {
     }
   }
 
-  return { name, description, reference, withBindings, setBindings };
+  return { name, description, reference, withBindings, setBindings, availableWhen, transitionTarget };
 }
 
 function extractLogicStatements(stmts: any[]): LogicStatement[] {
