@@ -134,11 +134,12 @@ start_agent customer_verification:
 
             capture_customer_info: @utils.setVariables
                 description: "Capture customer verification details"
-                with customer_email=@variables.customer_email
-                with customer_name=@variables.customer_name
-                with case_type=@variables.case_type
+                with customer_email=...
+                with customer_name=...
+                with case_type=...
+                with case_description=...
 
-            create_case: @utils.transition to @topic.case_creation
+            create_case: @utils.transition to @subagent.case_creation
                 description: "Create a new support case"
 
     after_reasoning:
@@ -157,9 +158,9 @@ start_agent customer_verification:
                 set @variables.escalation_score = @outputs.previous_cases
 
         if @variables.case_type != "":
-            transition to @topic.case_creation
+            transition to @subagent.case_creation
 
-topic case_creation:
+subagent case_creation:
     description: "Creates and manages customer support cases with deterministic prioritization"
 
     actions:
@@ -270,16 +271,16 @@ topic case_creation:
 
             capture_case_details: @utils.setVariables
                 description: "Capture detailed case information"
-                with case_description=@variables.case_description
+                with case_description=...
 
-            assess_escalation: @utils.transition to @topic.escalation_assessment
+            assess_escalation: @utils.transition to @subagent.escalation_assessment
                 description: "Assess if escalation is needed"
 
-            resolve_case: @utils.transition to @topic.case_resolution
+            resolve_case: @utils.transition to @subagent.case_resolution
                 description: "Attempt to resolve case directly"
 
     after_reasoning:
-        if @variables.case_description != "":
+        if @variables.case_type != "" and @variables.case_number == "":
             run @actions.Create_Support_Case
                 with customer_id=@variables.customer_id
                 with case_type=@variables.case_type
@@ -298,11 +299,11 @@ topic case_creation:
         if @variables.escalation_score >= 60:
             set @variables.escalation_required = True
             set @variables.case_priority = "high"
-            transition to @topic.escalation_assessment
+            transition to @subagent.escalation_assessment
         if @variables.escalation_score < 60:
-            transition to @topic.case_resolution
+            transition to @subagent.case_resolution
 
-topic escalation_assessment:
+subagent escalation_assessment:
     description: "Assesses escalation requirements and routes to appropriate support tier"
 
     actions:
@@ -410,13 +411,13 @@ topic escalation_assessment:
 
             capture_additional_info: @utils.setVariables
                 description: "Capture any additional case information"
-                with case_description=@variables.case_description
+                with case_description=...
 
-            help_another: @utils.transition to @topic.customer_verification
+            help_another: @utils.transition to @subagent.customer_verification
                 description: "Help another customer"
 
     after_reasoning:
-        if @variables.escalation_tier != "":
+        if @variables.escalation_tier != "" and @variables.escalation_required == False:
             run @actions.Initiate_Escalation
                 with case_number=@variables.case_number
                 with escalation_tier=@variables.escalation_tier
@@ -429,7 +430,7 @@ topic escalation_assessment:
                 with case_number=@variables.case_number
                 with escalation_details="Your case has been escalated to " + @variables.escalation_tier
 
-topic case_resolution:
+subagent case_resolution:
     description: "Attempts direct case resolution for lower priority issues"
 
     actions:
@@ -530,16 +531,16 @@ topic case_resolution:
 
             capture_resolution_feedback: @utils.setVariables
                 description: "Capture customer feedback on resolution attempt"
-                with case_description=@variables.case_description
+                with case_description=...
 
-            escalate_case: @utils.transition to @topic.escalation_assessment
+            escalate_case: @utils.transition to @subagent.escalation_assessment
                 description: "Escalate to higher tier support"
 
-            help_another: @utils.transition to @topic.customer_verification
+            help_another: @utils.transition to @subagent.customer_verification
                 description: "Help another customer"
 
     after_reasoning:
-        if @variables.case_description != "":
+        if @variables.case_description != "" and @variables.case_resolved == False:
             set @variables.escalation_score = @variables.escalation_score + 20
 
         if @variables.case_resolved:
