@@ -1,0 +1,692 @@
+system:
+    instructions: "You are a CXG technical support assistant for CRM integration products on Salesforce and Alibaba Cloud. Help Salesforce Administrators and Enterprise Developers troubleshoot WeChat integration, package installation, data synchronization, and AI connector issues. Always verify the user's Salesforce Org before proceeding. Collect thorough diagnostic information before creating tickets."
+    messages:
+        welcome: "Welcome to CXG Technical Support! I can help you troubleshoot issues with your CXG CRM integration products including WeChat integration, package installation, data sync, and AI connector features. Please provide your Salesforce Org ID and email address to get started."
+        error: "I'm experiencing technical difficulties accessing the support system. Please try again or email us directly at support@cxg.com."
+
+config:
+    developer_name: "CXG_Tech_Support_v1"
+    default_agent_user: "defaultagentuser@cxg.com"
+    description: "CXG technical support assistant for CRM integration products. Handles WeChat integration, package installation, data sync, and AI connector issues with intelligent triage, self-service KB diagnosis, advanced log analysis, ticket creation, and automatic escalation for critical and enterprise cases."
+
+language:
+    default_locale: "en_US"
+
+variables:
+    # User identification
+    user_org_id: mutable string = ""
+        description: "The user's Salesforce Org ID"
+    user_email: mutable string = ""
+        description: "The user's contact email address"
+    user_role: mutable string = ""
+        description: "The user's role: admin (Salesforce Administrator) or developer (Enterprise Developer)"
+    user_verified: mutable boolean = False
+        description: "Whether the Salesforce Org has been successfully verified"
+    contact_name: mutable string = ""
+        description: "The user's full name retrieved from their profile"
+    subscription_tier: mutable string = ""
+        description: "Customer subscription tier: standard or enterprise. Enterprise customers receive priority escalation."
+
+    # Issue classification
+    issue_category: mutable string = ""
+        description: "Issue category: wechat_integration, package_install, data_sync, or ai_connector"
+    issue_description: mutable string = ""
+        description: "Detailed description of the issue provided by the user"
+    issue_severity: mutable string = "low"
+        description: "Issue severity level: low, medium, high, or critical. Set to critical if the user reports complete unavailability or all users are affected."
+    env_type: mutable string = ""
+        description: "Environment type where the issue occurs: production or sandbox"
+    has_active_incident: mutable boolean = False
+        description: "Whether there is a known active incident or outage for the reported issue category"
+
+    # Diagnosis
+    kb_solution_found: mutable boolean = False
+        description: "Whether a matching solution was found in the CXG knowledge base"
+    root_cause_hint: mutable string = ""
+        description: "Root cause hint identified from log analysis. Empty string if analysis was inconclusive."
+
+    # Ticket and escalation
+    ticket_number: mutable string = ""
+        description: "The created support ticket number"
+    ticket_created: mutable boolean = False
+        description: "Whether a support ticket has already been created for this session"
+    sla_hours: mutable number = 72
+        description: "Expected response time in hours based on issue severity"
+    escalation_required: mutable boolean = False
+        description: "Whether this ticket requires escalation to a senior engineer"
+    escalation_reason: mutable string = ""
+        description: "The reason this ticket was escalated"
+
+start_agent user_identification:
+    description: "Verifies the user's Salesforce Org and identifies their role as a Salesforce Administrator or Enterprise Developer"
+
+    actions:
+        Verify_Salesforce_Org:
+            description: "Verifies the Salesforce Org ID and retrieves subscription tier information"
+            label: "Verify Salesforce Org"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                org_id: string
+                    label: "Org ID"
+                    description: "The Salesforce Org ID to verify"
+                    is_required: True
+            outputs:
+                org_valid: boolean
+                    label: "Org Valid"
+                    is_displayable: False
+                org_name: string
+                    label: "Org Name"
+                    is_displayable: True
+                subscription_tier: string
+                    label: "Subscription Tier"
+                    is_displayable: False
+            target: "flow://VerifySalesforceOrg"
+
+        Get_User_Profile:
+            description: "Retrieves the user's profile information and role from the Salesforce Org"
+            label: "Get User Profile"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                org_id: string
+                    label: "Org ID"
+                    description: "Salesforce Org ID"
+                    is_required: True
+                email: string
+                    label: "Email"
+                    description: "User's email address"
+                    is_required: True
+            outputs:
+                user_role: string
+                    label: "User Role"
+                    is_displayable: False
+                contact_name: string
+                    label: "Contact Name"
+                    is_displayable: True
+            target: "flow://GetUserProfile"
+
+    before_reasoning:
+        if @variables.user_org_id == "" and @variables.user_email == "":
+            set @variables.user_verified = False
+
+    reasoning:
+        instructions: ->
+            | Welcome to CXG Technical Support!
+
+              I'm here to help you with CXG CRM integration products, including:
+              - **WeChat Integration** — configuration, message sync, public account binding
+              - **Package Installation** — Salesforce package install, upgrade, and uninstall
+              - **Data Synchronization** — sync errors, field mapping, and duplicate records
+              - **AI Connector** — Prompt Builder, RAG knowledge base, AI Actions, and audit logs
+
+              To get started, please provide:
+              1. Your **Salesforce Org ID**
+              2. Your **email address**
+              3. Your role: **Salesforce Administrator** or **Developer**
+
+        actions:
+            capture_user_info: @utils.setVariables
+                description: "Capture the user's Org ID, email address, and role (admin or developer)"
+                with user_org_id = ...
+                with user_email = ...
+                with user_role = ...
+
+            verify_org: @actions.Verify_Salesforce_Org
+                with org_id = @variables.user_org_id
+                set @variables.user_verified = @outputs.org_valid
+                set @variables.subscription_tier = @outputs.subscription_tier
+                available when @variables.user_org_id != ""
+
+            get_profile: @actions.Get_User_Profile
+                with org_id = @variables.user_org_id
+                with email = @variables.user_email
+                set @variables.user_role = @outputs.user_role
+                set @variables.contact_name = @outputs.contact_name
+                available when @variables.user_verified == True
+
+            go_to_triage: @utils.transition to @topic.issue_triage
+                description: "Proceed to issue triage once the user's identity is verified and role is known"
+                available when @variables.user_verified == True and @variables.user_role != ""
+
+    after_reasoning:
+        if @variables.user_org_id != "" and @variables.user_email != "":
+            run @actions.Verify_Salesforce_Org
+                with org_id = @variables.user_org_id
+                set @variables.user_verified = @outputs.org_valid
+                set @variables.subscription_tier = @outputs.subscription_tier
+
+        if @variables.user_verified == True and @variables.contact_name == "":
+            run @actions.Get_User_Profile
+                with org_id = @variables.user_org_id
+                with email = @variables.user_email
+                set @variables.user_role = @outputs.user_role
+                set @variables.contact_name = @outputs.contact_name
+
+        if @variables.user_verified == True and @variables.user_role != "":
+            transition to @topic.issue_triage
+
+topic issue_triage:
+    description: "Classifies the support issue by category and severity, and checks for active known incidents before routing to the appropriate diagnosis path"
+
+    actions:
+        Search_Known_Issues:
+            description: "Searches for active known incidents or outages for the reported issue category and environment"
+            label: "Search Known Issues"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Category of the reported issue"
+                    is_required: True
+                env_type: string
+                    label: "Environment"
+                    description: "production or sandbox"
+                    is_required: True
+            outputs:
+                has_active_incident: boolean
+                    label: "Active Incident"
+                    is_displayable: False
+                incident_summary: string
+                    label: "Incident Summary"
+                    is_displayable: True
+            target: "flow://SearchKnownIssues"
+
+    before_reasoning:
+        # Compute severity deterministically from category and environment
+        set @variables.issue_severity = "low"
+        if @variables.env_type == "production" and @variables.issue_category == "data_sync":
+            set @variables.issue_severity = "high"
+        if @variables.env_type == "production" and @variables.issue_category == "ai_connector":
+            set @variables.issue_severity = "high"
+        if @variables.env_type == "production" and @variables.issue_category == "wechat_integration":
+            set @variables.issue_severity = "medium"
+
+    reasoning:
+        instructions: ->
+            | Hello, {!@variables.contact_name}! I can see you're logged in as a **{!@variables.user_role}**.
+
+              To route your issue to the right support path, I need a few details:
+
+              **1. Issue Category** — which area is affected?
+              - `wechat_integration` — WeChat configuration, message sync, public account binding
+              - `package_install` — CXG package install, upgrade, or uninstall failures
+              - `data_sync` — data sync errors, field mapping issues, duplicate records
+              - `ai_connector` — AI Connector setup, Prompt Builder, RAG knowledge base, AI Actions, audit logs
+
+              **2. Environment** — is this affecting **production** or **sandbox**?
+
+              **3. Description** — please describe what's happening. If all users are affected or the service is completely unavailable, mention that so I can prioritize accordingly.
+
+        actions:
+            capture_issue_info: @utils.setVariables
+                description: "Capture the issue category, environment type, issue description, and severity. Set severity to critical if the user reports complete unavailability or all users are affected."
+                with issue_category = ...
+                with env_type = ...
+                with issue_description = ...
+                with issue_severity = ...
+
+            check_incidents: @actions.Search_Known_Issues
+                with issue_category = @variables.issue_category
+                with env_type = @variables.env_type
+                set @variables.has_active_incident = @outputs.has_active_incident
+                available when @variables.issue_category != "" and @variables.env_type != ""
+
+            go_to_advanced: @utils.transition to @topic.advanced_diagnosis
+                description: "Route to advanced diagnosis for high or critical severity issues"
+                available when @variables.issue_severity == "high" or @variables.issue_severity == "critical"
+
+            go_to_self_service: @utils.transition to @topic.self_service_diagnosis
+                description: "Route to self-service knowledge base for low or medium severity issues"
+                available when @variables.issue_severity == "low" or @variables.issue_severity == "medium"
+
+    after_reasoning:
+        if @variables.issue_category != "" and @variables.env_type != "":
+            run @actions.Search_Known_Issues
+                with issue_category = @variables.issue_category
+                with env_type = @variables.env_type
+                set @variables.has_active_incident = @outputs.has_active_incident
+
+        if @variables.issue_description != "" and @variables.issue_severity == "critical":
+            transition to @topic.advanced_diagnosis
+
+        if @variables.issue_description != "" and @variables.issue_severity == "high":
+            transition to @topic.advanced_diagnosis
+
+        if @variables.issue_description != "" and @variables.issue_severity == "medium":
+            transition to @topic.self_service_diagnosis
+
+        if @variables.issue_description != "" and @variables.issue_severity == "low":
+            transition to @topic.self_service_diagnosis
+
+topic self_service_diagnosis:
+    description: "Attempts self-service resolution for low and medium severity issues using the CXG knowledge base. Creates a ticket if the KB cannot resolve the issue."
+
+    actions:
+        Query_Knowledge_Base:
+            description: "Searches the CXG knowledge base for articles and step-by-step solutions matching the reported issue"
+            label: "Search Knowledge Base"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Category of the issue to search"
+                    is_required: True
+                issue_description: string
+                    label: "Issue Description"
+                    description: "Description of the problem to match against KB articles"
+                    is_required: True
+            outputs:
+                solution_found: boolean
+                    label: "Solution Found"
+                    is_displayable: False
+                solution_steps: string
+                    label: "Solution Steps"
+                    is_displayable: True
+                article_id: string
+                    label: "Article ID"
+                    is_displayable: False
+            target: "flow://QueryKnowledgeBase"
+
+        Collect_Basic_Diagnostics:
+            description: "Guides the user to collect basic diagnostic information such as error screenshots and configuration screenshots"
+            label: "Collect Basic Diagnostics"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Issue category to tailor the diagnostic guide"
+                    is_required: True
+            outputs:
+                diagnostics_guide: string
+                    label: "Diagnostics Guide"
+                    is_displayable: True
+            target: "flow://CollectBasicDiagnostics"
+
+    before_reasoning:
+        if @variables.issue_category != "" and @variables.kb_solution_found == False:
+            run @actions.Query_Knowledge_Base
+                with issue_category = @variables.issue_category
+                with issue_description = @variables.issue_description
+                set @variables.kb_solution_found = @outputs.solution_found
+
+    reasoning:
+        instructions: ->
+            if @variables.kb_solution_found == True:
+                | I found a solution in our knowledge base for your **{!@variables.issue_category}** issue.
+
+                  Please follow the steps provided above and let me know if this resolves your problem.
+
+                  If the solution doesn't work, I can collect more detailed diagnostics and open a support ticket for you.
+            else:
+                | I wasn't able to find an exact match in our knowledge base for your issue.
+
+                  Let me help you collect some diagnostic information. This will help our support team investigate if we need to escalate to a ticket.
+
+                  Please use {!@actions.collect_basic_diagnostics} to follow the diagnostic guide for your issue type.
+
+        actions:
+            search_kb: @actions.Query_Knowledge_Base
+                with issue_category = @variables.issue_category
+                with issue_description = @variables.issue_description
+                set @variables.kb_solution_found = @outputs.solution_found
+
+            collect_basic_diagnostics: @actions.Collect_Basic_Diagnostics
+                with issue_category = @variables.issue_category
+                available when @variables.kb_solution_found == False
+
+            go_to_advanced: @utils.transition to @topic.advanced_diagnosis
+                description: "Escalate to advanced technical diagnosis if self-service is insufficient"
+
+            go_to_ticket: @utils.transition to @topic.ticket_creation
+                description: "Create a support ticket because the knowledge base did not resolve the issue"
+                available when @variables.kb_solution_found == False
+
+    after_reasoning:
+        if @variables.kb_solution_found == False:
+            transition to @topic.ticket_creation
+
+topic advanced_diagnosis:
+    description: "Performs deep technical diagnosis by collecting category-specific logs and running service health checks. Routes to ticket creation with enriched diagnostic context."
+
+    actions:
+        Analyze_Error_Logs:
+            description: "Analyzes error logs and diagnostic data to identify the root cause and suggest a fix"
+            label: "Analyze Error Logs"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Category of the issue"
+                    is_required: True
+                log_data: string
+                    label: "Log Data"
+                    description: "Error logs or diagnostic data provided by the user"
+                    is_required: True
+            outputs:
+                root_cause_hint: string
+                    label: "Root Cause"
+                    is_displayable: True
+                suggested_fix: string
+                    label: "Suggested Fix"
+                    is_displayable: True
+            target: "flow://AnalyzeErrorLogs"
+
+        Check_Service_Health:
+            description: "Checks the real-time health status of CXG backend services for the affected integration area"
+            label: "Check Service Health"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Category of the issue to check service health for"
+                    is_required: True
+            outputs:
+                service_status: string
+                    label: "Service Status"
+                    is_displayable: True
+                degraded_components: string
+                    label: "Degraded Components"
+                    is_displayable: True
+            target: "flow://CheckServiceHealth"
+
+    before_reasoning:
+        run @actions.Check_Service_Health
+            with issue_category = @variables.issue_category
+
+    reasoning:
+        instructions: ->
+            if @variables.issue_category == "wechat_integration":
+                | I need to collect diagnostic information for your WeChat integration issue.
+
+                  Please provide:
+                  - Your WeChat public account App ID and callback URL configuration
+                  - Any error messages from the message sync logs
+                  - The exact timestamp when the issue first occurred
+                  - Whether this affects all users or specific accounts only
+
+            if @variables.issue_category == "package_install":
+                | I need to collect diagnostic information for your package installation issue.
+
+                  Please provide:
+                  - The CXG package version you are installing or upgrading to
+                  - The full installation error message or log
+                  - Your Salesforce Org edition (e.g., Enterprise, Unlimited)
+                  - The permission sets assigned to the installing user
+
+            if @variables.issue_category == "data_sync":
+                | I need to collect diagnostic information for your data synchronization issue.
+
+                  Please provide:
+                  - The sync job ID or batch ID from the sync dashboard
+                  - The Salesforce objects and fields involved in the mapping
+                  - The exact error timestamps from the sync log
+                  - The volume of records affected
+
+            if @variables.issue_category == "ai_connector":
+                | I need to collect diagnostic information for your AI connector issue.
+
+                  Please provide:
+                  - The CXG AI Connector version installed in your Org
+                  - The name of the failing Prompt Template or AI Action
+                  - Your RAG knowledge base ID (if the issue involves RAG)
+                  - Any audit log entries showing the failure, including the input and output
+
+        actions:
+            check_health: @actions.Check_Service_Health
+                with issue_category = @variables.issue_category
+
+            analyze_logs: @actions.Analyze_Error_Logs
+                with issue_category = @variables.issue_category
+                with log_data = @variables.issue_description
+                set @variables.root_cause_hint = @outputs.root_cause_hint
+
+            capture_diagnostics: @utils.setVariables
+                description: "Capture additional diagnostic details, log snippets, or configuration information provided by the user"
+                with issue_description = ...
+
+            go_to_ticket: @utils.transition to @topic.ticket_creation
+                description: "Create a support ticket with the collected diagnostic information"
+
+    after_reasoning:
+        transition to @topic.ticket_creation
+
+topic ticket_creation:
+    description: "Creates a support ticket with all collected information, notifies the user with SLA details, and automatically escalates critical and enterprise cases"
+
+    actions:
+        Create_Support_Ticket:
+            description: "Creates a new CXG support ticket with all collected issue information and diagnostics"
+            label: "Create Support Ticket"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            inputs:
+                org_id: string
+                    label: "Org ID"
+                    description: "Salesforce Org ID"
+                    is_required: True
+                issue_category: string
+                    label: "Issue Category"
+                    description: "Category of the reported issue"
+                    is_required: True
+                issue_severity: string
+                    label: "Severity"
+                    description: "Issue severity level"
+                    is_required: True
+                issue_description: string
+                    label: "Issue Description"
+                    description: "Full description of the issue including diagnostic details"
+                    is_required: True
+                root_cause_hint: string
+                    label: "Root Cause Hint"
+                    description: "Root cause hint from log analysis, if available"
+                    is_required: False
+            outputs:
+                ticket_number: string
+                    label: "Ticket Number"
+                    is_displayable: True
+                sla_hours: number
+                    label: "SLA Hours"
+                    is_displayable: True
+            target: "flow://CreateSupportTicket"
+
+        Notify_User:
+            description: "Sends a confirmation email to the user with the ticket number and expected response time"
+            label: "Notify User"
+            require_user_confirmation: False
+            include_in_progress_indicator: False
+            inputs:
+                email: string
+                    label: "Email"
+                    description: "User's email address"
+                    is_required: True
+                ticket_number: string
+                    label: "Ticket Number"
+                    description: "Support ticket reference number"
+                    is_required: True
+                sla_hours: number
+                    label: "SLA Hours"
+                    description: "Expected response time in hours"
+                    is_required: True
+            outputs:
+                notification_sent: boolean
+                    label: "Notification Sent"
+                    is_displayable: False
+            target: "flow://NotifyUser"
+
+    before_reasoning:
+        if @variables.ticket_created == False and @variables.issue_description != "":
+            run @actions.Create_Support_Ticket
+                with org_id = @variables.user_org_id
+                with issue_category = @variables.issue_category
+                with issue_severity = @variables.issue_severity
+                with issue_description = @variables.issue_description
+                with root_cause_hint = @variables.root_cause_hint
+                set @variables.ticket_number = @outputs.ticket_number
+                set @variables.sla_hours = @outputs.sla_hours
+            set @variables.ticket_created = True
+            run @actions.Notify_User
+                with email = @variables.user_email
+                with ticket_number = @variables.ticket_number
+                with sla_hours = @variables.sla_hours
+
+    reasoning:
+        instructions: ->
+            | Your support ticket has been created successfully.
+
+              **Ticket Details:**
+              - Ticket Number: **{!@variables.ticket_number}**
+              - Category: {!@variables.issue_category}
+              - Severity: {!@variables.issue_severity}
+              - Environment: {!@variables.env_type}
+
+              **Expected Response Times:**
+              - Critical: 1 hour
+              - High (Production): 4 hours
+              - Medium: 1 business day
+              - Low: 3 business days
+              - Enterprise escalation: 30 minutes
+
+              A confirmation email has been sent to **{!@variables.user_email}**.
+
+              Is there anything else I can clarify while you wait for our team to respond?
+
+        actions:
+            help_another: @utils.transition to @topic.user_identification
+                description: "Start a new support session for a different user or Org"
+
+            go_to_escalation: @utils.transition to @topic.escalation
+                description: "Immediately escalate this ticket to a senior engineer"
+                available when @variables.escalation_required == True
+
+    after_reasoning:
+        # Determine escalation based on severity and subscription tier
+        if @variables.issue_severity == "critical":
+            set @variables.escalation_required = True
+            set @variables.escalation_reason = "Critical severity"
+
+        if @variables.issue_severity == "high" and @variables.env_type == "production":
+            set @variables.escalation_required = True
+            set @variables.escalation_reason = "Production high severity"
+
+        if @variables.subscription_tier == "enterprise":
+            set @variables.escalation_required = True
+            set @variables.escalation_reason = "Enterprise SLA"
+
+        if @variables.escalation_required == True:
+            transition to @topic.escalation
+
+topic escalation:
+    description: "Escalates the support ticket to a senior CXG engineer, notifies the account manager, and confirms the escalation to the user"
+
+    actions:
+        Escalate_Ticket:
+            description: "Escalates the support ticket to a senior CXG engineer and returns the assigned engineer and response SLA"
+            label: "Escalate Ticket"
+            require_user_confirmation: True
+            include_in_progress_indicator: True
+            inputs:
+                ticket_number: string
+                    label: "Ticket Number"
+                    description: "Support ticket to escalate"
+                    is_required: True
+                escalation_reason: string
+                    label: "Escalation Reason"
+                    description: "Reason for escalation"
+                    is_required: True
+                issue_severity: string
+                    label: "Severity"
+                    description: "Issue severity level"
+                    is_required: True
+            outputs:
+                assigned_engineer: string
+                    label: "Assigned Engineer"
+                    is_displayable: True
+                response_sla: string
+                    label: "Response SLA"
+                    is_displayable: True
+                escalation_id: string
+                    label: "Escalation ID"
+                    is_displayable: False
+            target: "flow://EscalateTicket"
+
+        Notify_Account_Manager:
+            description: "Alerts the customer's account manager that a ticket has been escalated"
+            label: "Notify Account Manager"
+            require_user_confirmation: False
+            include_in_progress_indicator: False
+            inputs:
+                org_id: string
+                    label: "Org ID"
+                    description: "Customer Org ID"
+                    is_required: True
+                ticket_number: string
+                    label: "Ticket Number"
+                    description: "Escalated ticket reference"
+                    is_required: True
+            outputs:
+                manager_notified: boolean
+                    label: "Manager Notified"
+                    is_displayable: False
+            target: "flow://NotifyAccountManager"
+
+        Send_Escalation_Confirmation:
+            description: "Sends an escalation confirmation email to the user with the assigned engineer's name and expected response time"
+            label: "Send Escalation Confirmation"
+            require_user_confirmation: False
+            include_in_progress_indicator: False
+            inputs:
+                email: string
+                    label: "Email"
+                    description: "User's email address"
+                    is_required: True
+                assigned_engineer: string
+                    label: "Assigned Engineer"
+                    description: "Name of the senior engineer assigned"
+                    is_required: True
+                response_sla: string
+                    label: "Response SLA"
+                    description: "Committed response time"
+                    is_required: True
+            outputs:
+                confirmation_sent: boolean
+                    label: "Confirmation Sent"
+                    is_displayable: False
+            target: "flow://SendEscalationConfirmation"
+
+    before_reasoning:
+        run @actions.Escalate_Ticket
+            with ticket_number = @variables.ticket_number
+            with escalation_reason = @variables.escalation_reason
+            with issue_severity = @variables.issue_severity
+
+        run @actions.Notify_Account_Manager
+            with org_id = @variables.user_org_id
+            with ticket_number = @variables.ticket_number
+
+    reasoning:
+        instructions: ->
+            | Your ticket has been escalated to our senior support team.
+
+              **Escalation Summary:**
+              - Ticket: **{!@variables.ticket_number}**
+              - Reason: {!@variables.escalation_reason}
+              - Severity: {!@variables.issue_severity}
+
+              **Escalated Response Times:**
+              - Critical: 1 hour
+              - High (Production): 4 hours
+              - Enterprise SLA: 30 minutes
+
+              Your account manager has been notified. You will receive an escalation confirmation email at {!@variables.user_email} with your assigned engineer's contact details.
+
+              Is there anything else I can help you with?
+
+        actions:
+            help_another: @utils.transition to @topic.user_identification
+                description: "Start a new support session for a different user or issue"
