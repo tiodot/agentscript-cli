@@ -8,6 +8,7 @@ import { SplitGenerator } from './generator/split-generator';
 import { CodeGenerator } from './generator/index';
 import { ToolGenerator } from './generator/tool-generator';
 import { generateBailianProject, buildWheel, deployToBailian } from './bailian-deploy.js';
+import { generateE2ETests } from './test-generator/index';
 
 const program = new Command();
 
@@ -238,6 +239,63 @@ program
     console.log(`Exported ${allActions.length} action scaffold(s) → ${outputPath}`);
     console.log('Fill in each _impl function, then run:');
     console.log(`  agentscript deploy ${file} --actions ${outputPath}`);
+  });
+
+program
+  .command('gen-tests')
+  .description('Generate e2e pytest tests from an AgentScript .agent file')
+  .argument('<file>', 'Path to the .agent file')
+  .option('-o, --output <path>', 'Output test file path (default: tests/test_<agentSlug>_e2e.py)')
+  .option('--email <email>', 'Valid test email address used in generated inputs (default: test@example.com)')
+  .option('--api-key <key>', 'DashScope API key for LLM enrichment (falls back to DASHSCOPE_API_KEY env var)')
+  .action(async (file, options) => {
+    const inputPath = resolve(file);
+    const source = readFileSync(inputPath, 'utf-8');
+
+    let doc: any;
+    try {
+      doc = parse(source);
+    } catch (err) {
+      console.error(`Error parsing ${file}: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+
+    if (doc.hasErrors) {
+      const errorMessages = doc.errors.map((d: any) => d.message).join('\n');
+      console.error(`AgentScript parse errors:\n${errorMessages}`);
+      process.exit(1);
+    }
+
+    const config = extractConfig(doc.ast);
+    const variables = extractVariables(doc.ast);
+    const subagents = extractSubagents(doc.ast);
+
+    const agentSlug = (config.agentName || config.developerName || 'agent')
+      .toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    const outputPath = options.output
+      ? resolve(options.output)
+      : resolve('tests', `test_${agentSlug}_e2e.py`);
+
+    const validEmail = options.email ?? 'test@example.com';
+    const apiKey = options.apiKey ?? process.env['DASHSCOPE_API_KEY'];
+
+    if (!apiKey) {
+      console.warn('[gen-tests] DASHSCOPE_API_KEY not set — generating tests with fallback inputs (no LLM enrichment).');
+    }
+
+    try {
+      console.log(`[gen-tests] Analysing ${file}...`);
+      const output = await generateE2ETests({ config, variables, subagents, validEmail, apiKey });
+
+      // Ensure output directory exists
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, output, 'utf-8');
+      console.log(`[gen-tests] Generated → ${outputPath}`);
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
   });
 
 program.parse();
